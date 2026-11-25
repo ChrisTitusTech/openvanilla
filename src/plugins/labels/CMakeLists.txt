@@ -1,15 +1,10 @@
-﻿# Generated from MQ2Labels.vcxproj
+# Generated from MQ2Labels.vcxproj
 # This file is designed to work with add_subdirectory()
 
 # ---------------------------------------------------------------------
 # Props file includes
 # ---------------------------------------------------------------------
 include("../../Plugin.cmake")
-
-# ---------------------------------------------------------------------
-# vcpkg dependencies
-# ---------------------------------------------------------------------
-find_package(fmt REQUIRED)
 
 # ---------------------------------------------------------------------
 # Source files
@@ -33,13 +28,6 @@ set_target_properties(MQ2Labels PROPERTIES FOLDER "core/plugins")
 # Apply props file configurations
 # ---------------------------------------------------------------------
 target_Plugin_props(MQ2Labels)
-
-# ---------------------------------------------------------------------
-# Link vcpkg dependencies
-# ---------------------------------------------------------------------
-target_link_libraries(MQ2Labels PRIVATE
-    fmt::fmt
-)
 
 # ---------------------------------------------------------------------
 # Project dependencies

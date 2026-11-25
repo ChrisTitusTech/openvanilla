@@ -32,7 +32,7 @@ function Convert-MSBuildVariable {
             -replace '\$\(Configuration\)', '$<CONFIG>' `
             -replace '\$\(Platform\)', '${CMAKE_GENERATOR_PLATFORM}' `
             -replace '\$\(MQBuildDirectory\)', '${CMAKE_BINARY_DIR}/' `
-            -replace '\$\(MQBinaryDirName\)', '$<CONFIG>' `
+            -replace '\$\(MQBinaryDirName\)', '$<IF:$<CONFIG:Debug>,debug,release>' `
             -replace '\$\(OutDir\)', '${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/' `
             -replace '\$\(IntDir\)', '${CMAKE_CURRENT_BINARY_DIR}/' `
             -replace '\$\(MQSolutionDirectory\)', '${CMAKE_SOURCE_DIR}/src/' `

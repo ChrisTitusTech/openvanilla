@@ -1,4 +1,4 @@
-﻿# Generated from login.vcxproj
+# Generated from login.vcxproj
 # This file is designed to work with add_subdirectory()
 
 # ---------------------------------------------------------------------

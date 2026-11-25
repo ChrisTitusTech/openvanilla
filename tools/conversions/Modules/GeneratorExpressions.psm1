@@ -286,7 +286,7 @@ function Join-OptionsWithGeneratorExpressions {
 # Clean listed properties by removing redundant conditions
 function Clear-ListedProperties {
     param (
-        [hashtable]$Properties,
+        [System.Collections.IDictionary]$Properties,
         [switch]$MultiBuild
     )
 

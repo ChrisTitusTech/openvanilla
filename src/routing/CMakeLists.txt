@@ -1,4 +1,4 @@
-﻿# Generated from routing.vcxproj
+# Generated from routing.vcxproj
 # This file is designed to work with add_subdirectory()
 
 # ---------------------------------------------------------------------

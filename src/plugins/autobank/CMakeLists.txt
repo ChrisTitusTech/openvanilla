@@ -1,15 +1,10 @@
-﻿# Generated from MQ2AutoBank.vcxproj
+# Generated from MQ2AutoBank.vcxproj
 # This file is designed to work with add_subdirectory()
 
 # ---------------------------------------------------------------------
 # Props file includes
 # ---------------------------------------------------------------------
 include("../../Plugin.cmake")
-
-# ---------------------------------------------------------------------
-# vcpkg dependencies
-# ---------------------------------------------------------------------
-find_package(fmt REQUIRED)
 
 # ---------------------------------------------------------------------
 # Header files
@@ -54,13 +49,6 @@ set_target_properties(MQ2AutoBank PROPERTIES FOLDER "core/plugins")
 # Apply props file configurations
 # ---------------------------------------------------------------------
 target_Plugin_props(MQ2AutoBank)
-
-# ---------------------------------------------------------------------
-# Link vcpkg dependencies
-# ---------------------------------------------------------------------
-target_link_libraries(MQ2AutoBank PRIVATE
-    fmt::fmt
-)
 
 # ---------------------------------------------------------------------
 # Project dependencies

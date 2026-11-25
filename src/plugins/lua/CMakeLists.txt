@@ -1,4 +1,4 @@
-﻿# Generated from MQ2Lua.vcxproj
+# Generated from MQ2Lua.vcxproj
 # This file is designed to work with add_subdirectory()
 
 # ---------------------------------------------------------------------
@@ -134,14 +134,13 @@ target_link_libraries(MQ2Lua PRIVATE
 # ---------------------------------------------------------------------
 # Project dependencies
 # ---------------------------------------------------------------------
-add_dependencies(MQ2Lua MQ2Main imgui)
-
 target_link_libraries(MQ2Lua PRIVATE MQ2Main imgui)
 
 # ---------------------------------------------------------------------
 # Preprocessor definitions
 # ---------------------------------------------------------------------
 target_compile_definitions(MQ2Lua PRIVATE
+    "SOL_EXCEPTIONS_SAFE_PROPAGATION=0"
     "SOL_LUAJIT=1"
 )
 
@@ -156,10 +155,10 @@ target_include_directories(MQ2Lua PRIVATE
 # Compiler options
 # ---------------------------------------------------------------------
 target_compile_options(MQ2Lua PRIVATE
-    "/EHa"
     "$<$<CONFIG:Debug>:/MTd>"
-    "$<$<STREQUAL:${CMAKE_GENERATOR_PLATFORM},x64>:$<$<CONFIG:Release>:/Gy->>"
+    "/EHa"
     "/bigobj"
+    "$<$<STREQUAL:${CMAKE_GENERATOR_PLATFORM},x64>:$<$<CONFIG:Release>:/Gy->>"
 )
 
 # ---------------------------------------------------------------------

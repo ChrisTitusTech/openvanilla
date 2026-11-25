@@ -1,4 +1,4 @@
-﻿# Generated from zep.vcxproj
+# Generated from zep.vcxproj
 # This file is designed to work with add_subdirectory()
 
 # ---------------------------------------------------------------------
@@ -155,8 +155,8 @@ target_compile_definitions(zep PRIVATE
 # Character set defines
 # ---------------------------------------------------------------------
 target_compile_definitions(zep PRIVATE
-    "_UNICODE"
     "UNICODE"
+    "_UNICODE"
 )
 
 # ---------------------------------------------------------------------

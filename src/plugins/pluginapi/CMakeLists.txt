@@ -1,4 +1,4 @@
-﻿# Generated from pluginapi.vcxproj
+# Generated from pluginapi.vcxproj
 # This file is designed to work with add_subdirectory()
 
 # ---------------------------------------------------------------------

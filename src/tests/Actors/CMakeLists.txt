@@ -32,19 +32,17 @@ target_Common_props(Actors)
 # ---------------------------------------------------------------------
 # Project dependencies
 # ---------------------------------------------------------------------
-add_dependencies(Actors routing)
-
 target_link_libraries(Actors PRIVATE routing)
 
 # ---------------------------------------------------------------------
 # Preprocessor definitions
 # ---------------------------------------------------------------------
 target_compile_definitions(Actors PRIVATE
-    "$<$<CONFIG:Debug>:_DEBUG>"
     "$<$<STREQUAL:${CMAKE_GENERATOR_PLATFORM},Win32>:WIN32>"
+    "$<$<CONFIG:Debug>:_DEBUG>"
+    "_CONSOLE"
     "MQ2MAIN_IMPL"
     "$<$<CONFIG:Release>:NDEBUG>"
-    "_CONSOLE"
 )
 
 # ---------------------------------------------------------------------
@@ -52,8 +50,8 @@ target_compile_definitions(Actors PRIVATE
 # ---------------------------------------------------------------------
 target_include_directories(Actors PRIVATE
     "${VCPKG_IncludeStatic}/crashpad"
-    "${CMAKE_SOURCE_DIR}/src"
     "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_SOURCE_DIR}/src"
 )
 
 # ---------------------------------------------------------------------
@@ -61,19 +59,18 @@ target_include_directories(Actors PRIVATE
 # ---------------------------------------------------------------------
 target_compile_options(Actors PRIVATE
     "/W3"
-    "$<$<CONFIG:Release>:/Oi>"
-    "$<$<CONFIG:Release>:/Gy>"
     "/permissive-"
-    "/std:c++17"
+    "$<$<CONFIG:Release>:/Gy>"
+    "$<$<CONFIG:Release>:/Oi>"
 )
 
 # ---------------------------------------------------------------------
 # Library directories
 # ---------------------------------------------------------------------
 target_link_directories(Actors PRIVATE
+    "${MQLibDir}"
     "${PlatformLibraryDirectories}"
     "${VCPKG_LibraryDirs}"
-    "${MQLibDir}"
     "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/"
 )
 
@@ -90,18 +87,18 @@ target_link_libraries(Actors PRIVATE
 # Linker options
 # ---------------------------------------------------------------------
 target_link_options(Actors PRIVATE
-    "$<$<CONFIG:Release>:/OPT:ICF>"
     "/DEBUG"
-    "$<$<CONFIG:Release>:/OPT:REF>"
     "/SUBSYSTEM:CONSOLE"
+    "$<$<CONFIG:Release>:/OPT:REF>"
+    "$<$<CONFIG:Release>:/OPT:ICF>"
 )
 
 # ---------------------------------------------------------------------
 # Character set defines
 # ---------------------------------------------------------------------
 target_compile_definitions(Actors PRIVATE
-    "_UNICODE"
     "UNICODE"
+    "_UNICODE"
 )
 
 # ============================================================================

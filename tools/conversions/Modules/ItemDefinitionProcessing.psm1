@@ -43,7 +43,7 @@ function Process-ConditionalElements {
     param(
         [object]$Elements,
         [array]$ParentCondition,
-        [hashtable]$TargetHash,
+        [System.Collections.IDictionary]$TargetHash,
         [string[]]$ExcludePatterns = @(),
         [string]$Delimiter = ';',
         [switch]$ForPropsFile,
@@ -90,7 +90,7 @@ function Process-ConditionalElements {
 
             foreach ($fv in $finalValues) {
                 if (-not [string]::IsNullOrWhiteSpace($fv)) {
-                    if (-not $TargetHash.ContainsKey($fv)) {
+                    if (-not $TargetHash.Contains($fv)) {
                         $TargetHash[$fv] = @()
                     }
                     $TargetHash[$fv] += $elemCondition
@@ -105,9 +105,9 @@ function Collect-CompilerSettings {
     param(
         [System.Xml.XmlElement]$CompileElement,
         [array]$Condition,
-        [hashtable]$PreprocessorDefs,
-        [hashtable]$IncludeDirs,
-        [hashtable]$CompileOptions,
+        [System.Collections.IDictionary]$PreprocessorDefs,
+        [System.Collections.IDictionary]$IncludeDirs,
+        [System.Collections.IDictionary]$CompileOptions,
         [switch]$ForPropsFile,
         [string]$PropsName
     )
@@ -157,7 +157,7 @@ function Collect-CompilerSettings {
                     # Handle options that return multiple values (space-separated like /wd4018 /wd4244)
                     $convertedValues = $converted -split ' ' | Where-Object { $_ }
                     foreach ($cv in $convertedValues) {
-                        if (-not $CompileOptions.ContainsKey($cv)) {
+                        if (-not $CompileOptions.Contains($cv)) {
                             $CompileOptions[$cv] = @()
                         }
                         $CompileOptions[$cv] += $elemCondition
@@ -185,9 +185,9 @@ function Collect-LinkerSettings {
     param(
         [System.Xml.XmlElement]$LinkElement,
         [array]$Condition,
-        [hashtable]$LibDirs,
-        [hashtable]$LinkLibraries,
-        [hashtable]$LinkOptions,
+        [System.Collections.IDictionary]$LibDirs,
+        [System.Collections.IDictionary]$LinkLibraries,
+        [System.Collections.IDictionary]$LinkOptions,
         [switch]$ForPropsFile,
         [string]$PropsName
     )
@@ -237,7 +237,7 @@ function Collect-LinkerSettings {
                     # Handle options that return multiple values (space-separated)
                     $convertedValues = $converted -split ' ' | Where-Object { $_ }
                     foreach ($cv in $convertedValues) {
-                        if (-not $LinkOptions.ContainsKey($cv)) {
+                        if (-not $LinkOptions.Contains($cv)) {
                             $LinkOptions[$cv] = @()
                         }
                         $LinkOptions[$cv] += $elemCondition
@@ -262,7 +262,10 @@ function Collect-LinkerSettings {
 
 # Generate library file patterns for vcpkg package filtering
 function Get-VcpkgLibraryPatterns {
-    param([string[]]$PackageNames)
+    param(
+        [string[]]$PackageNames,
+        [switch]$IncludeAllKnown
+    )
 
     # Mapping of vcpkg package names to their library file patterns
     $vcpkgLibraryMap = @{
@@ -281,15 +284,19 @@ function Get-VcpkgLibraryPatterns {
         'curl'      = @('^libcurl.*\.lib$', '^curl\.lib$')
         'openssl'   = @('^libcrypto\.lib$', '^libssl\.lib$')
         'argon2'    = @('^argon2\.lib$', '^argon2d\.lib$', '^libargon2\.lib$')
-        'crashpad'  = @('^crashpad.*\.lib$', '^base\.lib$', '^common\.lib$', '^client\.lib$', '^util\.lib$')
+        'crashpad'  = @('^crashpad.*\.lib$', '^vcpkg_crashpad_.*\.lib$', '^base\.lib$', '^common\.lib$', '^client\.lib$', '^util\.lib$')
         'dxsdk-d3dx' = @('^d3dx9.*\.lib$', '^d3dx10.*\.lib$', '^d3dx11.*\.lib$')
         'pe-parse'  = @('^pe-parse\.lib$')
+    }
+
+    if ($IncludeAllKnown) {
+        $PackageNames = @($PackageNames) + @($vcpkgLibraryMap.Keys) | Select-Object -Unique
     }
 
     $PackageNames | ForEach-Object {
         $pkgLower = $_.ToLower()
 
-        if ($vcpkgLibraryMap.ContainsKey($pkgLower)) {
+        if ($vcpkgLibraryMap.Contains($pkgLower)) {
             $vcpkgLibraryMap[$pkgLower]
         } else {
             # Generate default patterns for unknown packages
@@ -311,15 +318,15 @@ function Convert-AllItemDefinitionGroups {
     )
 
     # Collections for grouping settings
-    $preprocessorDefs = @{}
-    $preprocessorDefsRC = @{}
-    $includeDirs = @{}
-    $includeDirsRC = @{}
-    $compileOptions = @{}
-    $compileOptionsRC = @{}
-    $libDirs = @{}
-    $linkLibraries = @{}
-    $linkOptions = @{}
+    $preprocessorDefs = [ordered]@{}
+    $preprocessorDefsRC = [ordered]@{}
+    $includeDirs = [ordered]@{}
+    $includeDirsRC = [ordered]@{}
+    $compileOptions = [ordered]@{}
+    $compileOptionsRC = [ordered]@{}
+    $libDirs = [ordered]@{}
+    $linkLibraries = [ordered]@{}
+    $linkOptions = [ordered]@{}
 
     # First pass: collect all settings
     foreach ($group in $ItemDefGroupElements) {
@@ -327,6 +334,8 @@ function Convert-AllItemDefinitionGroups {
 
         # Process ClCompile settings
         foreach ($compile in $group.ClCompile) {
+            # Empty elements (e.g. <Link />) surface as strings and carry no settings
+            if ($compile -isnot [System.Xml.XmlElement]) { continue }
             $elementCondition = $compile.Condition
             $condition = @()
             if ($groupCondition) { $condition += $groupCondition }
@@ -344,6 +353,8 @@ function Convert-AllItemDefinitionGroups {
 
         # Process Link settings
         foreach ($link in $group.Link) {
+            # Empty elements (e.g. <Link />) surface as strings and carry no settings
+            if ($link -isnot [System.Xml.XmlElement]) { continue }
             $elementCondition = $link.Condition
             $condition = @()
             if ($groupCondition) { $condition += $groupCondition }
@@ -361,6 +372,8 @@ function Convert-AllItemDefinitionGroups {
 
         # Process ResourceCompile settings
         foreach ($rc in $group.ResourceCompile) {
+            # Empty elements (e.g. <Link />) surface as strings and carry no settings
+            if ($rc -isnot [System.Xml.XmlElement]) { continue }
             $elementCondition = $rc.Condition
             $condition = @()
             if ($groupCondition) { $condition += $groupCondition }
@@ -386,7 +399,9 @@ function Convert-AllItemDefinitionGroups {
 
     # Filter vcpkg libraries (vcxproj mode only)
     if ($VcpkgDependencies.Count -gt 0) {
-        $vcpkgLibPatterns = Get-VcpkgLibraryPatterns -PackageNames $VcpkgDependencies
+        # Known vcpkg libraries are filtered even when only pulled in transitively
+        # (e.g. fmt via spdlog, zlib via curl) because their CMake targets provide them.
+        $vcpkgLibPatterns = Get-VcpkgLibraryPatterns -PackageNames $VcpkgDependencies -IncludeAllKnown
         if ($vcpkgLibPatterns.Count -gt 0) {
             $librariesToRemove = @()
             foreach ($libKey in @($linkLibraries.Keys)) {

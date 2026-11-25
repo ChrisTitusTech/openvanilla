@@ -1,4 +1,4 @@
-﻿# Generated from MQ2AutoLogin.vcxproj
+# Generated from MQ2AutoLogin.vcxproj
 # This file is designed to work with add_subdirectory()
 
 # ---------------------------------------------------------------------
@@ -9,7 +9,6 @@ include("../../Plugin.cmake")
 # ---------------------------------------------------------------------
 # vcpkg dependencies
 # ---------------------------------------------------------------------
-find_package(fmt REQUIRED)
 find_package(protobuf REQUIRED)
 
 # ---------------------------------------------------------------------
@@ -50,7 +49,6 @@ target_Plugin_props(MQ2AutoLogin)
 # Link vcpkg dependencies
 # ---------------------------------------------------------------------
 target_link_libraries(MQ2AutoLogin PRIVATE
-    fmt::fmt
     protobuf::libprotobuf
 )
 

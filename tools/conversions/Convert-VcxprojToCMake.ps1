@@ -86,7 +86,7 @@ function Process-PropsFiles {
             # Normalize cmake path for deduplication
             $normalizedPath = [System.IO.Path]::GetFullPath($cmakePath)
 
-            if (-not $seenCmakePaths.ContainsKey($normalizedPath)) {
+            if (-not $seenCmakePaths.Contains($normalizedPath)) {
                 $seenCmakePaths[$normalizedPath] = $true
 
                 $propsName = [System.IO.Path]::GetFileNameWithoutExtension($propsPath) -replace '-', '_'
@@ -183,7 +183,7 @@ function Generate-BuildEventCMake {
             # Create a key from the commands to detect duplicates
             $commandKey = $convertedCommands -join "|"
 
-            if (-not $uniqueEvents.ContainsKey($commandKey)) {
+            if (-not $uniqueEvents.Contains($commandKey)) {
                 $uniqueEvents[$commandKey] = @{
                     Commands = $convertedCommands
                     Message = $event.Message
@@ -290,6 +290,26 @@ if (-not (Test-OutputFileExists -OutputPath $OutputPath -Force $Force -BackupExi
 Write-Host "Parsing $VcxprojPath..." -ForegroundColor Cyan
 [xml]$vcxproj = Get-Content $VcxprojPath
 
+# Expand project-local UserMacros (e.g. library lists) in item definitions so their
+# contents are converted and filtered instead of becoming undefined CMake variables.
+$userMacros = [ordered]@{}
+$vcxproj.Project.PropertyGroup |
+    Where-Object { $_.Label -eq "UserMacros" -and -not $_.Condition } |
+    ForEach-Object { $_.ChildNodes } |
+    Where-Object { $_ -is [System.Xml.XmlElement] -and -not $_.GetAttribute("Condition") } |
+    ForEach-Object { $userMacros[$_.LocalName] = $_.InnerText }
+
+if ($userMacros.Count -gt 0) {
+    $vcxproj.Project.ItemDefinitionGroup |
+        ForEach-Object { $_.SelectNodes(".//text()") } |
+        ForEach-Object {
+            $node = $_
+            foreach ($name in $userMacros.Keys) {
+                $node.Value = $node.Value.Replace("`$($name)", $userMacros[$name])
+            }
+        }
+}
+
 # Extract project name - prefer from Globals PropertyGroup, fallback to filename
 # This assumes globals aren't conditional
 $globalsPropertyGroup = $vcxproj.Project.PropertyGroup |
@@ -361,16 +381,16 @@ if ($hasMixedTypes) {
 
 $characterSet = Clear-ListedProperties -Properties ($vcxproj.Project.PropertyGroup | Where-Object {
     $_.CharacterSet
-} | ForEach-Object -Begin { $ex = @{} } -Process {
+} | ForEach-Object -Begin { $ex = [ordered]@{} } -Process {
     $condition = $_.Condition
     $_.CharacterSet | ForEach-Object {
         if ($_ -eq 'Unicode') {
-            if (-not $ex.ContainsKey('UNICODE')) { $ex['UNICODE'] = @() }
+            if (-not $ex.Contains('UNICODE')) { $ex['UNICODE'] = @() }
             $ex['UNICODE'] += $condition
-            if (-not $ex.ContainsKey('_UNICODE')) { $ex['_UNICODE'] = @() }
+            if (-not $ex.Contains('_UNICODE')) { $ex['_UNICODE'] = @() }
             $ex['_UNICODE'] += $condition
         } elseif ($_ -eq 'MultiByte') {
-            if (-not $ex.ContainsKey('_MBCS')) { $ex['_MBCS'] = @() }
+            if (-not $ex.Contains('_MBCS')) { $ex['_MBCS'] = @() }
             $ex['_MBCS'] += $condition
         }
     }
@@ -456,7 +476,7 @@ if ($otherFiles.Count -gt 0) {
 }
 
 # only cpp and asm files can be excluded
-$excludedFiles = ($allSourceFiles + $allAsmFiles) | ForEach-Object -Begin { $ex = @{} } -Process {
+$excludedFiles = ($allSourceFiles + $allAsmFiles) | ForEach-Object -Begin { $ex = [ordered]@{} } -Process {
     $conditions = $_.ChildNodes | Where-Object {
         $_.Name -eq 'ExcludedFromBuild' -and $_.'#text' -eq 'true'
     } | ForEach-Object {
@@ -466,17 +486,17 @@ $excludedFiles = ($allSourceFiles + $allAsmFiles) | ForEach-Object -Begin { $ex 
     if ($conditions.Count -gt 0) {
         $distinct = Clear-ListedProperties -Properties @{ ex = $conditions } -MultiBuild:$hasMixedTypes
         $condition = Join-OptionsWithGeneratorExpressions -OptionName 'ExcludedFromBuild=true' -Entries $distinct['ex']
-        if (-not $ex.ContainsKey($condition)) { $ex[$condition] = @() }
+        if (-not $ex.Contains($condition)) { $ex[$condition] = @() }
         $ex[$condition] += Convert-PathToCMake $_.Include $ProjectDir
     }
 } -End { $ex }
 
 # only cpp files can have forced includes
-$forcedIncludes = $allSourceFiles | ForEach-Object -Begin { $ex = @{} } -Process {
+$forcedIncludes = $allSourceFiles | ForEach-Object -Begin { $ex = [ordered]@{} } -Process {
     # MQ only really uses this for pch.h, so just assume simple file names
     $file = $_
     $_.ForcedIncludeFiles | Where-Object { $_ } | ForEach-Object {
-        if (-not $ex.ContainsKey($_)) { $ex[$_] = @() }
+        if (-not $ex.Contains($_)) { $ex[$_] = @() }
         $ex[$_] += Convert-PathToCMake $file.Include $ProjectDir
     }
 } -End { $ex }
@@ -586,8 +606,10 @@ Write-Host "Extracting project references..." -ForegroundColor Cyan
 $projectReferences = $vcxproj.Project.ItemGroup.ProjectReference |
         Where-Object { $_.Include } |
         ForEach-Object {
-            $refFileName = [System.IO.Path]::GetFileNameWithoutExtension($_.Include)
-            $refFullPath = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($ProjectDir, $_.Include))
+            # vcxproj paths use backslashes, which are not separators on non-Windows hosts
+            $refInclude = $_.Include -replace '\\', '/'
+            $refFileName = [System.IO.Path]::GetFileNameWithoutExtension($refInclude)
+            $refFullPath = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($ProjectDir, $refInclude))
 
             # Try to load the referenced vcxproj and extract ProjectName/RootNamespace/TargetName
             if (Test-Path $refFullPath) {
@@ -706,6 +728,7 @@ if ($vcpkgDependencies.Count -gt 0) {
             "crashpad-backtrace" { "crashpad" }
             "nlohmann-json"      { "nlohmann_json" }
             "zlib"               { "ZLIB" }
+            "curl"               { "CURL" }
             default              { $dep }
         }
 
@@ -1060,7 +1083,8 @@ $cmake += "# - Review and adjust as needed`n"
 
 # Write CMakeLists.txt
 Write-Host "Writing CMakeLists.txt to $OutputPath..." -ForegroundColor Cyan
-$cmake | Out-File -FilePath $OutputPath -Encoding UTF8 -NoNewline
+# Write UTF-8 without BOM consistently across Windows PowerShell and PowerShell 7
+[System.IO.File]::WriteAllText($ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputPath), ($cmake -join ''), [System.Text.UTF8Encoding]::new($false))
 
 Write-Host "CMakeLists.txt generated successfully!" -ForegroundColor Green
 

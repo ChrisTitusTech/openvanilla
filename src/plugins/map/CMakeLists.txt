@@ -1,4 +1,4 @@
-﻿# Generated from MQ2Map.vcxproj
+# Generated from MQ2Map.vcxproj
 # This file is designed to work with add_subdirectory()
 
 # ---------------------------------------------------------------------

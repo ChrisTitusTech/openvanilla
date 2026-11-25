@@ -1,4 +1,4 @@
-﻿# Generated from imgui.vcxproj
+# Generated from imgui.vcxproj
 # This file is designed to work with add_subdirectory()
 
 # ---------------------------------------------------------------------
@@ -141,26 +141,26 @@ target_link_libraries(imgui PRIVATE
 # Preprocessor definitions
 # ---------------------------------------------------------------------
 target_compile_definitions(imgui PRIVATE
-    "$<$<BOOL:${MQ_STATIC_BUILD}>:IMGUI_STATIC>"
-    "$<$<STREQUAL:${CMAKE_GENERATOR_PLATFORM},x64>:MQ_BUILD_AS_X64>"
     "$<$<NOT:$<BOOL:${MQ_STATIC_BUILD}>>:IMGUI_EXPORTS>"
     "WIN32"
-    "$<$<NOT:$<BOOL:${MQ_STATIC_BUILD}>>:_USRDLL>"
     "$<$<CONFIG:Debug>:_DEBUG>"
-    "$<$<CONFIG:Release>:NDEBUG>"
     "_WINDOWS"
+    "$<$<NOT:$<BOOL:${MQ_STATIC_BUILD}>>:_USRDLL>"
+    "$<$<BOOL:${MQ_STATIC_BUILD}>:IMGUI_STATIC>"
+    "$<$<STREQUAL:${CMAKE_GENERATOR_PLATFORM},x64>:MQ_BUILD_AS_X64>"
+    "$<$<CONFIG:Release>:NDEBUG>"
 )
 
 # ---------------------------------------------------------------------
 # Compiler options
 # ---------------------------------------------------------------------
 target_compile_options(imgui PRIVATE
+    "/FIpch.h"
     "/W3"
+    "/permissive-"
+    "$<$<CONFIG:Release>:/Ob2>"
     "$<$<CONFIG:Release>:/Oi>"
     "$<$<CONFIG:Release>:/Ot>"
-    "$<$<CONFIG:Release>:/Ob2>"
-    "/permissive-"
-    "/FIpch.h"
 )
 
 # ---------------------------------------------------------------------
@@ -175,16 +175,16 @@ target_link_libraries(imgui PRIVATE
 # ---------------------------------------------------------------------
 target_link_options(imgui PRIVATE
     "$<$<NOT:$<BOOL:${MQ_STATIC_BUILD}>>:/SUBSYSTEM:WINDOWS>"
-    "$<$<NOT:$<BOOL:${MQ_STATIC_BUILD}>>:$<$<CONFIG:Release>:/OPT:ICF>>"
     "$<$<NOT:$<BOOL:${MQ_STATIC_BUILD}>>:$<$<CONFIG:Release>:/OPT:REF>>"
+    "$<$<NOT:$<BOOL:${MQ_STATIC_BUILD}>>:$<$<CONFIG:Release>:/OPT:ICF>>"
 )
 
 # ---------------------------------------------------------------------
 # Character set defines
 # ---------------------------------------------------------------------
 target_compile_definitions(imgui PRIVATE
-    "_UNICODE"
     "UNICODE"
+    "_UNICODE"
 )
 
 # ---------------------------------------------------------------------

@@ -1,4 +1,4 @@
-﻿# Generated from MQ2ItemDisplay.vcxproj
+# Generated from MQ2ItemDisplay.vcxproj
 # This file is designed to work with add_subdirectory()
 
 # ---------------------------------------------------------------------

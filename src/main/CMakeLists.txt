@@ -1,4 +1,4 @@
-﻿# Generated from MQ2Main.vcxproj
+# Generated from MQ2Main.vcxproj
 # This file is designed to work with add_subdirectory()
 
 # ---------------------------------------------------------------------
@@ -35,6 +35,7 @@ set(MQ2Main_HEADERS
     "../../include/mq/api/ActorAPI.h"
     "../../include/mq/api/CommandAPI.h"
     "../../include/mq/api/DetourAPI.h"
+    "../../include/mq/api/GameObject.h"
     "../../include/mq/api/Inventory.h"
     "../../include/mq/api/Items.h"
     "../../include/mq/api/MacroAPI.h"
@@ -43,6 +44,7 @@ set(MQ2Main_HEADERS
     "../../include/mq/api/PluginAPI.h"
     "../../include/mq/api/RenderDoc.h"
     "../../include/mq/api/Spawns.h"
+    "../../include/mq/api/SpawnUtils.h"
     "../../include/mq/api/Spells.h"
     "../../include/mq/api/Textures.h"
     "../../include/mq/base/Base.h"
@@ -56,6 +58,7 @@ set(MQ2Main_HEADERS
     "../../include/mq/base/GlobalBuffer.h"
     "../../include/mq/base/Iterator.h"
     "../../include/mq/base/Logging.h"
+    "../../include/mq/base/Math.h"
     "../../include/mq/base/PluginHandle.h"
     "../../include/mq/base/ScopeExit.h"
     "../../include/mq/base/Signal.h"
@@ -68,6 +71,7 @@ set(MQ2Main_HEADERS
     "../../include/mq/imgui/ImGuiUtils.h"
     "../../include/mq/imgui/MQConsoleDelegate.h"
     "../../include/mq/imgui/Widgets.h"
+    "../../include/mq/contrib/glm/glmUtils.h"
     "../../include/mq/Plugin.h"
     "../../include/mq/utils/Args.h"
     "../../include/mq/utils/Benchmarks.h"
@@ -262,12 +266,6 @@ source_groups("Source Files" ${MQ2Main_SOURCES})
 
 # Exclude files from being built
 set_source_files_properties(
-    "AssemblyFunctions64.asm"
-    PROPERTIES
-        VS_SETTINGS "$<$<STREQUAL:${CMAKE_GENERATOR_PLATFORM},Win32>:ExcludedFromBuild=true>")
-
-# Exclude files from being built
-set_source_files_properties(
     "datatypes/MQ2AchievementType.cpp"
     "datatypes/MQ2AdvLootType.cpp"
     "datatypes/MQ2AlertListType.cpp"
@@ -328,6 +326,12 @@ set_source_files_properties(
     "datatypes/MQSocialType.cpp"
     PROPERTIES
         VS_SETTINGS "ExcludedFromBuild=true")
+
+# Exclude files from being built
+set_source_files_properties(
+    "AssemblyFunctions64.asm"
+    PROPERTIES
+        VS_SETTINGS "$<$<STREQUAL:${CMAKE_GENERATOR_PLATFORM},Win32>:ExcludedFromBuild=true>")
 
 # Force includes in source files
 set_source_files_properties(
@@ -405,19 +409,19 @@ target_link_libraries(MQ2Main PRIVATE zep eqlib imgui routing)
 # Preprocessor definitions
 # ---------------------------------------------------------------------
 target_compile_definitions(MQ2Main PRIVATE
-    "NOMINMAX"
     "MQ2MAIN_IMPL"
-    "$<$<BOOL:${MQ_STATIC_BUILD}>:MQLIB_STATIC>"
     "$<$<NOT:$<BOOL:${MQ_STATIC_BUILD}>>:MQ2MAIN_EXPORTS>"
+    "NOMINMAX"
+    "$<$<BOOL:${MQ_STATIC_BUILD}>:MQLIB_STATIC>"
 )
 
 # ---------------------------------------------------------------------
 # Include directories
 # ---------------------------------------------------------------------
 target_include_directories(MQ2Main PRIVATE
-    "${CMAKE_SOURCE_DIR}/contrib/mini-yaml/yaml"
     "${CMAKE_SOURCE_DIR}/src/main"
     "${CMAKE_SOURCE_DIR}/src"
+    "${CMAKE_SOURCE_DIR}/contrib/mini-yaml/yaml"
 )
 
 # ---------------------------------------------------------------------
@@ -438,8 +442,8 @@ target_link_libraries(MQ2Main PRIVATE
 # Linker options
 # ---------------------------------------------------------------------
 target_link_options(MQ2Main PRIVATE
-    "$<$<STREQUAL:${CMAKE_GENERATOR_PLATFORM},x64>:$<$<NOT:$<BOOL:${MQ_STATIC_BUILD}>>:/BASE:0x030000000000>>"
     "$<$<STREQUAL:${CMAKE_GENERATOR_PLATFORM},Win32>:$<$<NOT:$<BOOL:${MQ_STATIC_BUILD}>>:/BASE:0x03000000>>"
+    "$<$<STREQUAL:${CMAKE_GENERATOR_PLATFORM},x64>:$<$<NOT:$<BOOL:${MQ_STATIC_BUILD}>>:/BASE:0x030000000000>>"
 )
 
 # ---------------------------------------------------------------------

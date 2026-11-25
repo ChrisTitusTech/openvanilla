@@ -1,4 +1,4 @@
-﻿# Generated from MQ2TargetInfo.vcxproj
+# Generated from MQ2TargetInfo.vcxproj
 # This file is designed to work with add_subdirectory()
 
 # ---------------------------------------------------------------------

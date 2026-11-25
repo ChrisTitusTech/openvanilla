@@ -15,6 +15,7 @@ find_package(wil REQUIRED)
 find_package(date REQUIRED)
 find_package(CURL REQUIRED)
 find_package(cpr REQUIRED)
+find_package(nlohmann_json REQUIRED)
 find_package(pe-parse REQUIRED)
 find_package(protobuf REQUIRED)
 
@@ -99,6 +100,7 @@ target_link_libraries(MacroQuest PRIVATE
     date::date
     CURL::libcurl
     cpr::cpr
+    nlohmann_json::nlohmann_json
     pe-parse::pe-parse
     protobuf::libprotobuf
 )
@@ -106,8 +108,6 @@ target_link_libraries(MacroQuest PRIVATE
 # ---------------------------------------------------------------------
 # Project dependencies
 # ---------------------------------------------------------------------
-add_dependencies(MacroQuest imgui login routing)
-
 target_link_libraries(MacroQuest PRIVATE imgui login routing)
 
 # ---------------------------------------------------------------------
@@ -123,25 +123,29 @@ target_include_directories(MacroQuest PRIVATE
 # ---------------------------------------------------------------------
 target_compile_options(MacroQuest PRIVATE
     "$<$<CONFIG:Release>:/O2>"
-    "/std:c++17"
-    "$<$<CONFIG:Release>:/Oi>"
     "$<$<CONFIG:Release>:/Gy>"
+    "$<$<CONFIG:Release>:/Oi>"
 )
 
 # ---------------------------------------------------------------------
 # Link libraries
 # ---------------------------------------------------------------------
-# System libraries from LoaderDependencies* in MacroQuest.vcxproj; vcpkg libraries come from the targets above.
 target_link_libraries(MacroQuest PRIVATE
-    d3d11 setupapi imm32 secur32 ws2_32 wldap32 version
+    "d3d11.lib"
+    "setupapi.lib"
+    "imm32.lib"
+    "secur32.lib"
+    "ws2_32.lib"
+    "wldap32.lib"
+    "version.lib"
 )
 
 # ---------------------------------------------------------------------
 # Linker options
 # ---------------------------------------------------------------------
 target_link_options(MacroQuest PRIVATE
-    "$<$<CONFIG:Release>:/OPT:ICF>"
     "$<$<CONFIG:Release>:/OPT:REF>"
+    "$<$<CONFIG:Release>:/OPT:ICF>"
 )
 
 # ---------------------------------------------------------------------

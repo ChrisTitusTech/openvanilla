@@ -1,4 +1,4 @@
-﻿# Generated from NamedPipeClient.vcxproj
+# Generated from NamedPipeClient.vcxproj
 # This file is designed to work with add_subdirectory()
 
 # ---------------------------------------------------------------------
@@ -43,11 +43,11 @@ target_Common_props(NamedPipeClient)
 # Preprocessor definitions
 # ---------------------------------------------------------------------
 target_compile_definitions(NamedPipeClient PRIVATE
-    "WIN32"
-    "_CONSOLE"
-    "$<$<CONFIG:Debug>:_DEBUG>"
-    "$<$<CONFIG:Release>:NDEBUG>"
     "_CRT_SECURE_NO_WARNINGS"
+    "WIN32"
+    "$<$<CONFIG:Debug>:_DEBUG>"
+    "_CONSOLE"
+    "$<$<CONFIG:Release>:NDEBUG>"
 )
 
 # ---------------------------------------------------------------------
@@ -61,10 +61,10 @@ target_include_directories(NamedPipeClient PRIVATE
 # Compiler options
 # ---------------------------------------------------------------------
 target_compile_options(NamedPipeClient PRIVATE
-    "/permissive-"
-    "$<$<CONFIG:Release>:/Oi>"
     "/W3"
+    "/permissive-"
     "$<$<CONFIG:Release>:/Gy>"
+    "$<$<CONFIG:Release>:/Oi>"
 )
 
 # ---------------------------------------------------------------------
@@ -79,10 +79,10 @@ target_link_libraries(NamedPipeClient PRIVATE
 # Linker options
 # ---------------------------------------------------------------------
 target_link_options(NamedPipeClient PRIVATE
-    "$<$<CONFIG:Release>:/OPT:ICF>"
     "/DEBUG"
-    "$<$<CONFIG:Release>:/OPT:REF>"
     "/SUBSYSTEM:CONSOLE"
+    "$<$<CONFIG:Release>:/OPT:REF>"
+    "$<$<CONFIG:Release>:/OPT:ICF>"
 )
 
 # ============================================================================
