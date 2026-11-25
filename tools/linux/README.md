@@ -205,6 +205,13 @@ up in `config/login.db`. Add characters there from the MacroQuest tray menu
 TAGS="3 7 8 9" CHARS="erollisi:Main erollisi:Alt1 erollisi:Alt2 -" tools/linux/mq-launch.sh
 ```
 
+Wine tray icons use the X11 XEmbed protocol. Panels that only host
+StatusNotifierItem icons (Quickshell, Waybar) need a bridge, or the
+MacroQuest icon ends up in an off-screen Wine tray window. A lightweight
+option is [wine-sni-bridge](https://github.com/waliori/wine-sni-bridge)
+(needs `python3-xlib`, `python3-dbus`, `python3-gobject`). Start it before
+MacroQuest, or Wine re-docks the icon when the bridge appears.
+
 - Use absolute paths.
 - Patch the game through Steam after each EverQuest update.
 - The eqlib offsets must match the client build.

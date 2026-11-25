@@ -57,7 +57,9 @@ while read -r win; do
     [[ -n "$win" ]] && seen["$win"]=1
 done < <(eq_windows)
 
-if pgrep -f 'MacroQuest\.exe' >/dev/null; then
+# MacroQuest.exe relaunches as a randomly named copy with /spawnedprocess; match
+# that Wine process, not a leftover proton/steam.exe wrapper.
+if pgrep -f '^[A-Za-z]:\\.*\.exe /spawnedprocess' >/dev/null; then
     printf 'MacroQuest.exe already running\n'
 else
     printf 'starting MacroQuest.exe\n'
