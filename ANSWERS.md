@@ -330,9 +330,25 @@
   - Regenerated `CMakeLists.txt` files are tracked upstream files, so an
     upstream change to them can conflict on merge. Resolve such conflicts
     by taking upstream's version and regenerating.
-  - Not yet verified: whether the converter runs cleanly on Linux (path
-    separators) and produces the same output when nothing has changed. If
-    not, the fixes are candidates for a small upstream PR.
+  - Verified 2026-11-25: `pwsh ./batch-convert.ps1` runs on Linux. Before
+    the fixes, it had these problems:
+    - Backslash project references.
+    - Undefined `${LoaderDependencies*}` variables.
+    - `find_package(curl)`, which fails on case-sensitive file systems.
+    - `bin/$<CONFIG>` instead of `bin/release`.
+    - Hashtable-order output that changed on every run.
+  - Those problems are fixed in `tools/conversions/`, which is
+    upstreamable. The committed `CMakeLists.txt` files are now exactly the
+    converter's output, and they build on Linux.
+  - Regeneration dropped the loader's stale `/std:c++17`, so the loader now
+    builds as C++20. That needs `/Zc:twoPhase-` under clang for the loader
+    only, set in `tools/linux/cmake/mq-linux.cmake`.
+  - `ConverterRegeneration` in `tools/linux/test_linux_build_fixes.py`
+    fails if the committed files drift from the converter's output.
+  - The `src/eqlib` CMake file is excluded from the check, because upstream
+    eqlib owns it.
+  - `gen_solution.ps1` is the Windows Visual Studio front end, so the Linux
+    build doesn't use it.
 - **Revisit when:** Upstream starts maintaining the CMake files itself, or
   the converter can't run on Linux without large changes.
 

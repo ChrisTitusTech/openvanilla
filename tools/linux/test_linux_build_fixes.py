@@ -6,7 +6,9 @@
 """
 
 import re
+import shutil
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -18,7 +20,8 @@ EQLIB_PATCHES = sorted((REPO / "tools/linux/patches/eqlib").glob("*.patch"))
 REQUIRED = {
     "CMakeLists.txt": ["MQ_PLATFORM"],
     "src/Common.cmake": ['"${CMAKE_BINARY_DIR}/lib/${MQBinaryDirName}"'],
-    "src/loader/CMakeLists.txt": ["find_package(CURL REQUIRED)", "CURL::libcurl", "d3d11 setupapi imm32 secur32 ws2_32 wldap32 version"],
+    "src/loader/CMakeLists.txt": ["find_package(CURL REQUIRED)", "CURL::libcurl", '"d3d11.lib"', '"setupapi.lib"',
+                                  '"imm32.lib"', '"secur32.lib"', '"ws2_32.lib"', '"wldap32.lib"', '"version.lib"'],
     "src/loader/PostOffice.h": ["#include <windows.h>"],
     "src/login/Login.h": ["return typename Iterator::Sentinel();"],
     "src/imgui/CMakeLists.txt": ["imanim/im_anim.cpp"],
@@ -27,13 +30,21 @@ REQUIRED = {
     "src/plugins/autologin/StateMachine.cpp": ["static bool IsInConnectState();"],
     "include/mq/contrib/glm/glmUtils.h": ["#include <array>"],
     "tools/build_scripts/MQ2Main_PostBuild.ps1": ["$File1 = (Resolve-Path -Path $File1).Path"],
+    # Converter fixes: regenerating CMake files (batch-convert.ps1) must keep the fixes above.
+    "tools/conversions/Convert-VcxprojToCMake.ps1": [
+        '"curl"               { "CURL" }', "$refInclude = $_.Include -replace '\\\\', '/'",
+        "$userMacros[$_.LocalName] = $_.InnerText", "[System.Text.UTF8Encoding]::new($false)",
+        "$ex = [ordered]@{}"],
+    "tools/conversions/Modules/ConversionCommon.psm1": ["'$<IF:$<CONFIG:Debug>,debug,release>'"],
+    "tools/conversions/Modules/ItemDefinitionProcessing.psm1": [
+        "$linkLibraries = [ordered]@{}", "-IncludeAllKnown", "'^vcpkg_crashpad_.*\\.lib$'"],
 }
 
 # file -> strings that must be absent
 FORBIDDEN = {
     "src/Common.cmake": ['"/std:c++17"'],
     "src/loader/portfile.cmake": ["vcpkg_install_empty_package()"],
-    "src/loader/CMakeLists.txt": ["LoaderDependenciesRelease}"],
+    "src/loader/CMakeLists.txt": ["LoaderDependencies", "fmt.lib", "zlib.lib", '"libcurl', "vcpkg_crashpad_"],
     "src/main/CMakeLists.txt": ["ImGuiAlphaMask.h", "ItemDB.txt"],
     "src/main/MQ2Utilities.cpp": ["]##do_assign", ")##op##RightSide", "StackTop()##op", "StackSetTop(##op", "=op##("],
     "src/main/MQCommands.cpp": ["pItem->Item, pItem->DropID"],
@@ -47,6 +58,8 @@ FORBIDDEN_PATTERNS = {
     "src/main/MQ2Spells.cpp": [r"(?<!typename )\bDSL::(Term|Reducer|Modifier)\("],
     # Namespace-scope trampolines must use the portable DETOUR_TRAMPOLINE_FN.
     "src/**/*.cpp": [r"^DETOUR_TRAMPOLINE_DEF\("],
+    # Project references must be target names, not backslash vcxproj paths.
+    "src/**/CMakeLists.txt": [r"^target_link_libraries\(.*\\"],
 }
 
 
@@ -99,6 +112,64 @@ class EqlibPatches(unittest.TestCase):
                 self.assertEqual(reverse.returncode, 0,
                                  f"{patch.name} neither applies nor is applied; refresh it against "
                                  f"the current eqlib:\n{forward.stderr}")
+
+
+# batch-convert.ps1 also regenerates the eqlib submodule, which upstream eqlib owns.
+CONVERTER_SKIP = {"src/eqlib/eqlib.vcxproj"}
+
+
+def batch_convert_projects():
+    text = read("batch-convert.ps1")
+    for vcxproj, folder in re.findall(r"'([^']+\.vcxproj)'\s*=\s*'([^']*)'", text):
+        vcxproj = vcxproj.replace("\\", "/")
+        if vcxproj not in CONVERTER_SKIP:
+            yield vcxproj, folder
+
+
+def run_converter(projects, out_dir):
+    lines = ["$ErrorActionPreference = 'Stop'"]
+    outputs = {}
+    out_dir.mkdir(parents=True)
+    for i, (vcxproj, folder) in enumerate(projects):
+        out = Path(out_dir) / f"{i}.txt"
+        outputs[vcxproj] = out
+        lines.append(f"& ./tools/conversions/Convert-VcxprojToCMake.ps1 -VcxprojPath '{vcxproj}' "
+                     f"-OutputPath '{out}' -Force -SolutionFolder '{folder}' *> $null")
+    subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", "\n".join(lines)],
+                   cwd=REPO, check=True, capture_output=True, text=True)
+    return outputs
+
+
+@unittest.skipUnless(shutil.which("pwsh"), "pwsh is required to run the vcxproj converter")
+class ConverterRegeneration(unittest.TestCase):
+    """The committed CMake files are the converter's output, so regenerating them after an
+    upstream merge (pwsh ./batch-convert.ps1) cannot silently drop a fix or reorder flags."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.projects = list(batch_convert_projects())
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.first = run_converter(cls.projects, Path(cls.tmp.name) / "a")
+        cls.second = run_converter(cls.projects, Path(cls.tmp.name) / "b")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def test_projects_listed(self):
+        self.assertIn("src/loader/MacroQuest.vcxproj", dict(self.projects))
+
+    def test_output_is_deterministic(self):
+        for vcxproj, _ in self.projects:
+            with self.subTest(vcxproj=vcxproj):
+                self.assertEqual(self.first[vcxproj].read_bytes(), self.second[vcxproj].read_bytes())
+
+    def test_committed_files_match_converter(self):
+        for vcxproj, _ in self.projects:
+            committed = Path(vcxproj).parent / "CMakeLists.txt"
+            with self.subTest(file=str(committed)):
+                self.assertEqual(self.first[vcxproj].read_text(encoding="utf-8"), read(committed),
+                                 "Out of date; regenerate with: pwsh ./batch-convert.ps1")
 
 
 if __name__ == "__main__":

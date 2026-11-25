@@ -174,3 +174,14 @@ function(mq_linux_apply_vs_settings)
 endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL mq_linux_apply_vs_settings)
+
+# The loader targets Windows 7 (_WIN32_WINNT=0x0601), which hides RoTransformError, yet
+# <wrl/event.h> calls it from templates the loader never instantiates. MSVC defers that lookup;
+# clang's two-phase lookup (the default in C++20) does not, so defer it as MSVC does.
+function(mq_linux_loader_template_parsing)
+    if(TARGET MacroQuest)
+        target_compile_options(MacroQuest PRIVATE /Zc:twoPhase-)
+    endif()
+endfunction()
+
+cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL mq_linux_loader_template_parsing)

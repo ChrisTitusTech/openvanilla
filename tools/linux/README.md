@@ -84,12 +84,46 @@ The checker and tests also run:
 
 ## After pulling from upstream
 
-1. Run the checker and the tests.
-2. Fix each new mismatch in place by correcting the reference's case. If the
+1. Regenerate the CMake files: `pwsh ./batch-convert.ps1` (see
+   [Regenerating CMake files](#regenerating-cmake-files)).
+2. Run the checker and the tests.
+3. Fix each new mismatch in place by correcting the reference's case. If the
    reference is in a submodule, add a case shim.
-3. Add every new fixed spelling to `KNOWN_FIXES`.
-4. If `test_linux_build_fixes.py` fails, re-apply the clang fix that the
-   merge reverted, or refresh the eqlib patch.
+4. Add every new fixed spelling to `KNOWN_FIXES`.
+5. If `test_linux_build_fixes.py` fails, re-apply the clang or converter fix
+   that the merge reverted, or refresh the eqlib patch.
+
+## Regenerating CMake files
+
+The `.vcxproj` files are the source of truth (`ANSWERS.md` Q-021). The
+`CMakeLists.txt` files are generated from them, so never edit them by hand.
+
+- **`batch-convert.ps1`** (repository root, upstream-owned) lists every
+  converted project and runs `tools/conversions/Convert-VcxprojToCMake.ps1`
+  on each one. Run it from the repository root with `pwsh ./batch-convert.ps1`.
+  Afterwards, revert its changes in the `src/eqlib` submodule
+  (`git -C src/eqlib checkout CMakeLists.txt`), because upstream eqlib owns
+  that file. Its `*-conversion-analysis.txt` reports are ignored by git.
+- **`gen_solution.ps1`** (upstream-owned) generates a Visual Studio solution
+  on Windows. The Linux build doesn't use it.
+
+The converter carries these fixes, which are offered upstream:
+
+- It resolves project references that use backslash paths, so plugins link
+  `MQ2Main` rather than `..\..\main\MQ2Main`.
+- It expands a project's own `UserMacros`, such as the loader's
+  `LoaderDependencies*` library lists.
+- It drops every known vcpkg library, including transitive ones such as
+  `fmt` and `zlib`.
+- It maps `$(MQBinaryDirName)` to `debug`/`release`.
+- It uses `find_package(CURL)`, which matches case-sensitive file systems.
+- It skips empty `<Link />` elements.
+- Its output is deterministic: entries keep `.vcxproj` order instead of
+  hashtable order, and files are written as UTF-8 without a BOM.
+
+`ConverterRegeneration` in `test_linux_build_fixes.py` runs the converter
+twice. It fails if the two runs differ, or if any committed
+`CMakeLists.txt` differs from the converter's output.
 
 ## Building
 
@@ -112,7 +146,10 @@ tools/linux/build.sh            # output: build/linux-x64/bin/release
 3. Injects `cmake/mq-linux.cmake` into the root project. That file:
    - maps the Visual Studio-only settings to Ninja;
    - converts UTF-16 `.rc` files;
-   - redirects `powershell.exe` to `pwsh` through `bin/powershell.exe`.
+   - redirects `powershell.exe` to `pwsh` through `bin/powershell.exe`;
+   - compiles the loader with `/Zc:twoPhase-`. It targets Windows 7, which
+     hides `RoTransformError`, yet `<wrl/event.h>` calls it from templates.
+     MSVC defers that lookup, but clang's C++20 two-phase lookup does not.
 
 ### Clang compatibility fixes
 

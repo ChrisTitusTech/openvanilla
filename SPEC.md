@@ -24,7 +24,7 @@ Provisional; finalize after **Feature parity bar** is answered.
       that environment, verified by a written manual test checklist.
 - [ ] Two or more clients on one Linux host can be multiboxed with
       MacroQuest active in each.
-- [ ] After an upstream merge, one documented command regenerates the CMake
+- [x] After an upstream merge, one documented command regenerates the CMake
       files, and the Linux build picks up newly added upstream sources
       (for example, `MQGameFaceInspector.cpp`).
 - [ ] On a Linux host, a documented command produces `MacroQuest.exe`,
