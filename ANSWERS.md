@@ -614,3 +614,43 @@
 - **Revisit when:** GE-Proton breaks injection, EverQuest becomes
   installable outside Steam for this account, or the user moves to another
   Proton build.
+
+## Q-010: Multibox IPC across instances
+
+- **Resolved:** 2026-11-25
+- **Answer:**
+  - **Launch:** start every EverQuest client directly as `eqgame.exe patchme`
+    with GE-Proton's `proton run`, outside Steam and LaunchPad.
+  - **Shared prefix:** use the game's Steam prefix
+    (`STEAM_COMPAT_DATA_PATH=~/.steam/steam/steamapps/compatdata/205710`).
+  - **MacroQuest:** start `MacroQuest.exe` the same way.
+  - **Result:** all clients and MacroQuest share one prefix and one
+    wineserver, so upstream's named-pipe IPC works unchanged. No
+    cross-prefix transport is needed.
+- **Rationale:** `patchme` is the usual way to multibox EverQuest: it skips
+  the launcher and patcher, so several clients can start, which Steam's
+  one-instance-per-app launch doesn't allow. One wineserver is what Windows
+  named pipes need, so no IPC code changes are required.
+- **Evidence:**
+  - Two separate `proton run` launches used the same Steam prefix and
+    `STEAM_COMPAT_CLIENT_INSTALL_PATH=~/.steam/steam`. Each ran
+    `cmd /c ping`, started 8 seconds apart.
+  - Only one GE-Proton10-34 `wineserver` process existed, and NTSync was
+    active.
+  - A third `proton run` ran `tasklist`, which listed both `ping`
+    processes, so all three ran under one wineserver.
+  - The user stated that multiboxing is "generally done with patchme
+    outside of steam and not using its launcher".
+- **Consequences:**
+  - `patchme` skips patching. After each EverQuest update, run the game once
+    through Steam or LaunchPad to patch, before launching with `patchme`.
+  - The Live build must match the `eqlib` offsets that MacroQuest was built
+    with.
+  - Each client logs in at the in-game login screen; the AutoLogin plugin
+    can automate this.
+  - Every client must use the same Proton build and prefix. Mixing them
+    starts a second wineserver and breaks named pipes.
+  - An actual multi-client `eqgame.exe` test is still pending in the
+    verification environment.
+- **Revisit when:** Steam-linked accounts can't log in without Steam, or a
+  Proton update starts separate wineservers per `proton run`.

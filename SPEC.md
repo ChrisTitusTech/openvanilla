@@ -117,6 +117,9 @@ Provisional; finalize after **Feature parity bar** is answered.
   `ci_emu_rof2`, `ci_emu_tob`, `ov_build_beta_emu_rof2`,
   `ov_build_release_emu_rof2`, `ov_build_release_emu_tob`,
   `ov_build_release_test`.
+- Multiboxing launches each client as `eqgame.exe patchme` with `proton run`
+  in the shared Steam prefix, outside Steam and LaunchPad. All clients and
+  `MacroQuest.exe` share one wineserver.
 - The baseline runtime is GE-Proton10-34 (`wine-10.0 (Staging)`, DXVK 2.7.1).
   Direct3D goes through DXVK; WineD3D is not supported.
 - Injection uses the existing, already-written implementation unchanged:

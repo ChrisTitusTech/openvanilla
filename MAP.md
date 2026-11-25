@@ -11,14 +11,10 @@ See [SPEC.md](SPEC.md#destination).
       WinToast notifications, AutoLogin, the PostOffice/multibox IPC,
       Crashpad, Lua and luarocks, and each bundled plugin. (The in-game
       overlay is already excluded; see **Overlay requirement**.)
-- [ ] **Multibox IPC across instances** (`Q-010`) - Named pipes only work
-      inside one wineserver. Can extra clients start in the same Steam
-      Proton prefix and wineserver (Steam normally starts one instance), or
-      is a cross-prefix transport (TCP or Unix sockets) needed?
-- [ ] **Linux launch wrapper scope** (`Q-014`) - Should a Linux launch
-      script start `MacroQuest.exe` inside the game's GE-Proton prefix (Steam
-      launch options, `proton run`, or `protontricks-launch`) alongside the
-      Steam-launched `eqgame.exe`? Or is documentation alone enough?
+- [ ] **Linux launch wrapper scope** (`Q-014`) - The launch method is
+      settled (see **Multibox IPC across instances**). Should a fork-only
+      script start N clients and `MacroQuest.exe` with `proton run`, or is
+      documentation alone enough?
 - [ ] **Verification environment** (`Q-013`) - What Live accounts, hardware
       (Vulkan-capable GPU), and Linux distribution/display server are
       available for testing, and how many clients make up the multibox test?
@@ -103,3 +99,7 @@ None.
 - [x] [Steam and GE-Proton runtime](ANSWERS.md#q-025-steam-and-ge-proton-runtime)
       (`Q-025`) - Steam EverQuest Live under GE-Proton10-34 (Wine 10.0
       Staging, DXVK 2.7.1); MacroQuest runs in the game's Proton prefix.
+- [x] [Multibox IPC across instances](ANSWERS.md#q-010-multibox-ipc-across-instances)
+      (`Q-010`) - Launch every client with `eqgame.exe patchme` through
+      `proton run` in the shared Steam prefix, outside Steam and LaunchPad;
+      one wineserver keeps named pipes working.
