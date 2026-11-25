@@ -1,0 +1,25 @@
+# Fork-only: guards the Linux build's filename case fixes against upstream merges.
+name: Linux filename case check
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  case-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check out eqlib
+        run: git submodule update --init --depth 1 src/eqlib
+
+      - name: Check filename case
+        run: python3 tools/linux/check_filename_case.py --no-xwin
+
+      - name: Run tests
+        run: python3 -m unittest discover -s tools/linux -p "test_*.py" -v

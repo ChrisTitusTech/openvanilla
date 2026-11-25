@@ -1,0 +1,8 @@
+#!/bin/sh
+# Fork-only: report filename case problems after a merge or pull from upstream.
+root=$(git rev-parse --show-toplevel) || exit 0
+command -v python3 >/dev/null 2>&1 || exit 0
+if ! python3 "$root/tools/linux/check_filename_case.py" --root "$root"; then
+    echo "post-merge: filename case problems found; see tools/linux/README.md" >&2
+fi
+exit 0
