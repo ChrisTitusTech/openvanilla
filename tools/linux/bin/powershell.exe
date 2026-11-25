@@ -1,0 +1,9 @@
+#!/bin/sh
+# Linux stand-in for powershell.exe in MacroQuest build steps (tools/linux/README.md).
+# MQ2Main_PreBuild.ps1 only checks for Visual Studio and a Windows locale; skip it.
+for arg in "$@"; do
+    case "$arg" in
+        *MQ2Main_PreBuild.ps1) exit 0 ;;
+    esac
+done
+exec pwsh -NoLogo "$@"

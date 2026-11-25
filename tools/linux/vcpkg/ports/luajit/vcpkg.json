@@ -1,0 +1,12 @@
+{
+  "name": "luajit",
+  "version-date": "2023-10-21",
+  "port-version": 10,
+  "description": "LuaJIT is a Just-In-Time (JIT) compiler for the Lua programming language.",
+  "homepage": "https://github.com/LuaJIT/LuaJIT",
+  "license": "MIT",
+  "supports": "windows & x64 & !uwp",
+  "dependencies": [
+    { "name": "vcpkg-cmake", "host": true }
+  ]
+}

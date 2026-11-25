@@ -17,7 +17,7 @@ feature-parity bar are decided so that implementation can be phased.
 
 Provisional; finalize after **Feature parity bar** is answered.
 
-- [ ] On a supported Linux distribution, a documented procedure starts
+- [x] On a supported Linux distribution, a documented procedure starts
       `eqgame.exe` (Steam, GE-Proton) and `MacroQuest.exe` in the same Proton prefix, and
       `mq2main.dll` loads into the client automatically.
 - [ ] Each component listed as required by **Feature parity bar** works in

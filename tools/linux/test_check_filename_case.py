@@ -32,6 +32,10 @@ KNOWN_FIXES = {
     "extras/plugins/MQ2Telnet/WinTelnet.cpp": ['"wintelnet.h"', "<Ws2tcpip.h>"],
     "extras/plugins/MQ2Telnet/MQ2Telnet.vcxproj.filters": ['"mq2telnet.cpp"'],
     "tools/mkplugin/mkplugin.rc": ["Resource.h"],
+    # vcpkg installs CURLConfig.cmake; find_package(curl) only resolves on case-insensitive filesystems.
+    "src/loader/CMakeLists.txt": ["find_package(curl ", "curl::curl"],
+    # $<CONFIG> is "Release"; binaries go to bin/release, so the data files landed in a second directory.
+    "src/main/CMakeLists.txt": ['/bin/$<CONFIG>"'],
 }
 
 

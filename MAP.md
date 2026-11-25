@@ -18,14 +18,6 @@ See [SPEC.md](SPEC.md#destination).
 - [ ] **Verification environment** (`Q-013`) - What Live accounts, hardware
       (Vulkan-capable GPU), and Linux distribution/display server are
       available for testing, and how many clients make up the multibox test?
-- [ ] **Crashpad on Linux builds** (`Q-023`) - Crashpad's gn build needs a
-      Windows host (`winreg`). Should Linux builds drop crash reporting with a
-      fork-only stub, use prebuilt crashpad libraries, or port its build?
-      This ties into **Feature parity bar**.
-- [ ] **clang-cl source compatibility** (`Q-022`) - Which upstream sources
-      fail under `clang-cl`? Can they be fixed with flags
-      (`-fms-compatibility`, warning suppressions) or small upstreamable
-      patches, within the upstream sync policy?
 - [ ] **Linux CI and release pipeline** (`Q-012`) - Decide what runs on Linux
       runners (fork-only `ov_` workflow files, if any) and how artifacts are
       packaged without shipping the non-redistributable xwin SDK.
@@ -103,3 +95,8 @@ None.
       (`Q-010`) - Launch every client with `eqgame.exe patchme` through
       `proton run` in the shared Steam prefix, outside Steam and LaunchPad;
       one wineserver keeps named pipes working.
+- [x] [clang-cl source compatibility](ANSWERS.md#q-022-clang-cl-source-compatibility)
+      (`Q-022`) - Small MSVC-neutral source patches; eqlib fixes carried as
+      fork patches; full tree builds and injects under GE-Proton.
+- [x] [Crashpad on Linux builds](ANSWERS.md#q-023-crashpad-on-linux-builds)
+      (`Q-023`) - Fork-only stub port; no crash dumps on Linux builds.

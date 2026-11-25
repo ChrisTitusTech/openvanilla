@@ -1,0 +1,170 @@
+diff --git a/include/eqlib/Deprecate.h b/include/eqlib/Deprecate.h
+index e7d8def..eea1da2 100644
+--- a/include/eqlib/Deprecate.h
++++ b/include/eqlib/Deprecate.h
+@@ -20,6 +20,10 @@
+ 
+ #if defined(COMMENT_UPDATER)
+ #define DEPRECATE(x)
++#elif defined(__clang__)
++// [[deprecated]] is rejected after the extern "C" __declspec export macros and on array declarators;
++// the GNU spelling is accepted everywhere DEPRECATE is used.
++#define DEPRECATE(x) __attribute__((deprecated(x)))
+ #else
+ #define DEPRECATE(x) [[deprecated(x)]]
+ #endif
+diff --git a/include/eqlib/MemoryPatcher.h b/include/eqlib/MemoryPatcher.h
+index 1091952..16af5be 100644
+--- a/include/eqlib/MemoryPatcher.h
++++ b/include/eqlib/MemoryPatcher.h
+@@ -17,6 +17,19 @@
+ #include "eqlib/Config.h"
+ 
+ #include <cstdint>
++#include <type_traits>
++#include <utility>
++
++#if defined(__clang__) && !defined(COMMENT_UPDATER)
++namespace eqlib::detail {
++	// Clang rejects the unqualified &member and the namespace-scope `this` that the MSVC
++	// form relies on, so recover the enclosing class with friend injection instead.
++	template <typename Tag> struct trampoline_self_reader { friend auto trampoline_self_type(trampoline_self_reader<Tag>); };
++	template <typename Tag, typename T> struct trampoline_self_writer {
++		friend auto trampoline_self_type(trampoline_self_reader<Tag>) { return static_cast<T*>(nullptr); }
++	};
++}
++#endif
+ 
+ namespace eqlib {
+ 
+@@ -43,7 +56,22 @@ namespace eqlib {
+  *
+  * Note: The choice of name for the trampoline is stylistic only.
+  */
+-#if !defined COMMENT_UPDATER
++#if defined COMMENT_UPDATER
++#define DETOUR_TRAMPOLINE_DEF(ret, name, argtypes)
++#define DETOUR_TRAMPOLINE_FN(ret, name, argtypes)
++#elif defined(__clang__)
++#define DETOUR_TRAMPOLINE_DEF(ret, name, argtypes)                              \
++	struct name##_SelfTag;                                                      \
++	auto name##_SelfWriter() -> decltype(void(sizeof(::eqlib::detail::trampoline_self_writer<name##_SelfTag, std::remove_pointer_t<decltype(this)>>))); \
++	using name##_Self = std::remove_pointer_t<decltype(trampoline_self_type(::eqlib::detail::trampoline_self_reader<name##_SelfTag>{}))>; \
++	ret name##_Placeholder argtypes;                                            \
++	using name##_Type = decltype(&name##_Self::name##_Placeholder);             \
++	inline static name##_Type name##_Ptr = nullptr;                             \
++	template <typename... Args>                                                 \
++	ret name(Args&&... args) {                                                  \
++		return (this->*name##_Ptr)(std::forward<Args>(args)...);                \
++	}
++#else
+ #define DETOUR_TRAMPOLINE_DEF(ret, name, argtypes)                              \
+ 	ret name##_Placeholder argtypes;                                            \
+ 	using name##_Type = decltype(&name##_Placeholder);                          \
+@@ -55,8 +83,21 @@ namespace eqlib {
+ 		else                                                                    \
+ 			return (name##_Ptr)(std::forward<Args>(args)...);                   \
+ 	}
+-#else
+-#define DETOUR_TRAMPOLINE_DEF(ret, name, argtypes)
++#endif
++
++/**
++ * Namespace-scope form of DETOUR_TRAMPOLINE_DEF. DETOUR_TRAMPOLINE_DEF also works at
++ * namespace scope with MSVC, but only this form is portable to other compilers.
++ */
++#if !defined COMMENT_UPDATER
++#define DETOUR_TRAMPOLINE_FN(ret, name, argtypes)                               \
++	ret name##_Placeholder argtypes;                                            \
++	using name##_Type = decltype(&name##_Placeholder);                          \
++	inline name##_Type name##_Ptr = nullptr;                                    \
++	template <typename... Args>                                                 \
++	ret name(Args&&... args) {                                                  \
++		return (name##_Ptr)(std::forward<Args>(args)...);                       \
++	}
+ #endif
+ 
+ 
+diff --git a/include/eqlib/game/CXStr.h b/include/eqlib/game/CXStr.h
+index 22f7a56..7373a47 100644
+--- a/include/eqlib/game/CXStr.h
++++ b/include/eqlib/game/CXStr.h
+@@ -1256,7 +1256,7 @@ public:
+ 	int compare(size_type pos1, size_type count1, const T& t,
+ 		size_type pos2, size_type count2 = npos) const
+ 	{
+-		return std::string_view{ *this }.compare(pos1, count1, 2, pos2, count2);
++		return std::string_view{ *this }.compare(pos1, count1, t, pos2, count2);
+ 	}
+ 
+ 	// Checks if the string begins with the given prefix.
+diff --git a/include/eqlib/game/Items.h b/include/eqlib/game/Items.h
+index a8f78db..fde2351 100644
+--- a/include/eqlib/game/Items.h
++++ b/include/eqlib/game/Items.h
+@@ -1116,8 +1116,8 @@ public:
+ 	EQLIB_OBJECT ItemBase();
+ 
+ 	virtual ~ItemBase() {}
+-	virtual ItemDefinition* GetItemDefinition() const;
+-	virtual void SetItemDefinition(ItemDefinition* item);
++	EQLIB_OBJECT virtual ItemDefinition* GetItemDefinition() const;
++	EQLIB_OBJECT virtual void SetItemDefinition(ItemDefinition* item);
+ 	// ... more
+ 
+ 	// ItemClient::`vftable'{for `IChildItemContainer<class ItemBase>'}
+@@ -1266,7 +1266,7 @@ public:
+ 	EQLIB_OBJECT ItemClient();
+ 	EQLIB_OBJECT virtual ~ItemClient();
+ 
+-	virtual ItemDefinition* GetItemDefinition() const override;
++	EQLIB_OBJECT virtual ItemDefinition* GetItemDefinition() const override;
+ 
+ 	EQLIB_OBJECT static ItemPtr Create() { return eqstd::make_shared<ItemClient>(); }
+ 
+diff --git a/include/eqlib/game/SoeUtil.h b/include/eqlib/game/SoeUtil.h
+index a7c2a88..f7af1e2 100644
+--- a/include/eqlib/game/SoeUtil.h
++++ b/include/eqlib/game/SoeUtil.h
+@@ -697,7 +697,7 @@ public:
+ 	// get the current reference count
+ 	[[nodiscard]] int use_count() const noexcept
+ 	{
+-		return m_rep ? m_rep->m_strongRefs : 0;
++		return m_rep ? m_rep->m_strongRefs.load() : 0;
+ 	}
+ 
+ 	// Compare the address of shared control blocks
+diff --git a/include/eqstd/xmemory.h b/include/eqstd/xmemory.h
+index 8c734ad..a0484be 100644
+--- a/include/eqstd/xmemory.h
++++ b/include/eqstd/xmemory.h
+@@ -229,11 +229,11 @@ namespace eqstd
+ 	struct _Fake_proxy_ptr_impl { // fake replacement for a container proxy smart pointer when no container proxy is in use
+ 		_Fake_proxy_ptr_impl(const _Fake_proxy_ptr_impl&) = delete;
+ 		_Fake_proxy_ptr_impl& operator=(const _Fake_proxy_ptr_impl&) = delete;
+-		inline _Fake_proxy_ptr_impl(const _Fake_allocator&, _Leave_proxy_unbound) noexcept {}
+-		inline _Fake_proxy_ptr_impl(const _Fake_allocator&, const _Container_base0&) noexcept {}
++		constexpr _Fake_proxy_ptr_impl(const _Fake_allocator&, _Leave_proxy_unbound) noexcept {}
++		constexpr _Fake_proxy_ptr_impl(const _Fake_allocator&, const _Container_base0&) noexcept {}
+ 
+-		inline void _Bind(const _Fake_allocator&, _Container_base0*) noexcept {}
+-		inline void _Release() noexcept {}
++		constexpr void _Bind(const _Fake_allocator&, _Container_base0*) noexcept {}
++		constexpr void _Release() noexcept {}
+ 	};
+ 
+ 	template <class _Alloc>
+diff --git a/src/EQLibImpl.cpp b/src/EQLibImpl.cpp
+index 621ff44..9c6323e 100644
+--- a/src/EQLibImpl.cpp
++++ b/src/EQLibImpl.cpp
+@@ -271,7 +271,7 @@ void EQLibImpl::HandleDestroyGroundItem(EQGroundItem* groundItem)
+ //=================================================================================================
+ //=================================================================================================
+ 
+-DETOUR_TRAMPOLINE_DEF(int, ProcessGameEvents_Trampoline, ());
++DETOUR_TRAMPOLINE_FN(int, ProcessGameEvents_Trampoline, ());
+ int ProcessGameEvents_Detour()
+ {
+ 	int result = ProcessGameEvents_Trampoline();

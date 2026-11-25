@@ -1,0 +1,8 @@
+{
+  "name": "crashpad",
+  "version-date": "2024-04-11",
+  "port-version": 99,
+  "description": "Linux cross-build stub for crashpad: header-only API surface used by MacroQuest; crash reporting reports itself unavailable.",
+  "license": "Apache-2.0",
+  "supports": "windows"
+}

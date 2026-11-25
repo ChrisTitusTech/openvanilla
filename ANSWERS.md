@@ -663,3 +663,75 @@
     been tested yet.
 - **Revisit when:** Steam-linked accounts can't log in without Steam, or a
   Proton update starts separate wineservers per `proton run`.
+
+## Q-022: clang-cl source compatibility
+
+- **Resolved:** 2026-11-25
+- **Answer:** Option A. Keep native `clang-cl` and patch the sources clang
+  rejects, in forms that MSVC still accepts. No flag fixes them.
+  - **Upstream-owned files:** small upstreamable patches. These cover
+    `typename` on dependent names, invalid `##` token pastes, two varargs
+    bugs, a missing `<array>` and `<windows.h>`, a forward-referenced FSM
+    state, and a function-pointer-to-`void*` overload. Namespace-scope
+    trampolines move to `DETOUR_TRAMPOLINE_FN`.
+  - **`src/eqlib` submodule:** fork patches in
+    `tools/linux/patches/eqlib/`, applied idempotently by
+    `tools/linux/build.sh`.
+    - A clang branch of `DETOUR_TRAMPOLINE_DEF`; MSVC keeps the original.
+    - A portable `DETOUR_TRAMPOLINE_FN`.
+    - `DEPRECATE` using `__attribute__((deprecated))`.
+    - `constexpr` `_Fake_proxy_ptr_impl` in eqstd.
+    - Exported `ItemBase`/`ItemClient` item-definition virtuals.
+    - Two real bugs: the `CXStr.h` literal `2`, and the `SoeUtil.h` atomic
+      read.
+  - **Fork-only build glue:**
+    - `FMT_CONSTEVAL=` turns off fmt 10.2's compile-time format check,
+      which current clang rejects.
+    - A sol2 3.3.1 overlay port patches `optional<T&>::emplace`.
+    - Protobuf 3.21 needs no abseil, so the abseil autolinks are dropped.
+  - **Upstream CMake bugs fixed along the way:**
+    - The language standard was `/std:c++17`, which overrode upstream's
+      C++20.
+    - `MacroQuest`'s system libraries were missing.
+    - Plugins couldn't find `lib/release`.
+    - PostBuild wrote to `bin/Release`.
+    - PostBuild path handling failed under `pwsh` on Linux.
+- **Rationale:**
+  - Two constructs can't be fixed by any flag: an unqualified `&member` at
+    class scope, and `this` at namespace scope. `/permissive`,
+    `-fms-compatibility` and `-fdelayed-template-parsing` were all tried.
+  - Building with msvc-wine would add Wine at build time, which **Linux
+    toolchain** ruled out.
+  - Most fixes are latent bugs that MSVC tolerates, so they are worth
+    offering upstream.
+- **Evidence:**
+  - `tools/linux/build.sh` builds the whole tree with no errors:
+    `MacroQuest.exe`, `MQ2Main.dll`, `eqlib.dll`, `imgui-64.dll` and 14
+    plugins, including `MQ2Lua.dll`.
+  - Every binary uses the static CRT (no `vcruntime`/`msvcp` imports).
+  - Under GE-Proton10-34, `MacroQuest.exe` injected into two
+    `eqgame.exe patchme` clients. Each logged "MacroQuest Loaded" and
+    acquired the DX11 device.
+- **Consequences:**
+  - `tools/linux/test_linux_build_fixes.py` pins every upstream-file fix and
+    checks that the eqlib patches apply or are already applied, so an
+    upstream merge can't silently revert them.
+  - When eqlib updates, refresh the patch if the test fails.
+  - `git status` shows `src/eqlib` as modified after a build.
+- **Revisit when:** upstream accepts the patches, or eqlib moves to a
+  compiler-neutral trampoline macro.
+
+## Q-023: Crashpad on Linux builds
+
+- **Resolved:** 2026-11-25
+- **Answer:** Drop crash reporting on Linux builds. A fork-only header-only
+  `crashpad` overlay port provides the API, and every call fails at run time.
+- **Rationale:** Crashpad's gn build needs a Windows host. The user accepted
+  losing crash dumps under Wine, where they would be of limited use anyway.
+- **Evidence:**
+  - `MacroQuest.exe` logs "Crashpad handler failed to initialize".
+  - `MQ2Main.dll` logs "Failed to create crashpad::CrashReportDatabase".
+  - Both continue normally.
+- **Consequences:** Linux builds produce no minidumps; use Wine's own crash
+  output (`PROTON_LOG=1`) instead.
+- **Revisit when:** vcpkg's crashpad port builds from a Linux host.

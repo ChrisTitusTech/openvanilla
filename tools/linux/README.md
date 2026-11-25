@@ -88,3 +88,67 @@ The checker and tests also run:
 2. Fix each new mismatch in place by correcting the reference's case. If the
    reference is in a submodule, add a case shim.
 3. Add every new fixed spelling to `KNOWN_FIXES`.
+4. If `test_linux_build_fixes.py` fails, re-apply the clang fix that the
+   merge reverted, or refresh the eqlib patch.
+
+## Building
+
+Prerequisites: LLVM (`clang-cl`, `lld-link`, `llvm-rc`, `llvm-lib`,
+`llvm-mt`), `nasm`, `ninja`, `cmake`, `pwsh`, `iconv`, and an xwin splat
+(CRT 14.44, SDK 10.0.26100) at `~/.local/share/xwin` or `$XWIN_ROOT`.
+
+```sh
+git submodule update --init src/eqlib contrib/vcpkg
+tools/linux/build.sh            # output: build/linux-x64/bin/release
+```
+
+`build.sh` does the following:
+
+1. Applies `patches/eqlib/*.patch` to the `src/eqlib` submodule. This is
+   idempotent, and leaves the submodule showing as modified.
+2. Configures vcpkg with the `x64-windows-static` overlay triplet. The
+   overlay ports in `vcpkg/ports` are detours, luajit, pe-parse, sol2, and
+   a crashpad stub.
+3. Injects `cmake/mq-linux.cmake` into the root project. That file:
+   - maps the Visual Studio-only settings to Ninja;
+   - converts UTF-16 `.rc` files;
+   - redirects `powershell.exe` to `pwsh` through `bin/powershell.exe`.
+
+### Clang compatibility fixes
+
+Clang rejects some code that MSVC accepts. The fixes stay valid for MSVC and
+are offered upstream; see `ANSWERS.md` Q-022.
+
+- **Upstream-owned files:** fixed in place. `test_linux_build_fixes.py` pins
+  each fix, so a merge that reverts one fails the tests.
+- **`src/eqlib`:** fixes live in `patches/eqlib/`. After changing eqlib,
+  refresh the patch:
+
+  ```sh
+  git -C src/eqlib diff > tools/linux/patches/eqlib/0001-clang-compat.patch
+  ```
+
+- **Namespace-scope trampolines:** use `DETOUR_TRAMPOLINE_FN`. Keep
+  `DETOUR_TRAMPOLINE_DEF` for class scope only.
+
+## Running (multibox)
+
+Run every process in the game's Proton prefix so they share one
+wineserver. Start `MacroQuest.exe` first, then each client with `patchme`;
+MacroQuest injects into each `eqgame.exe` as it appears.
+
+```sh
+export STEAM_COMPAT_DATA_PATH=~/.steam/steam/steamapps/compatdata/205710
+export STEAM_COMPAT_CLIENT_INSTALL_PATH=~/.steam/steam
+export SteamAppId=205710 SteamGameId=205710
+proton=~/.steam/steam/compatibilitytools.d/GE-Proton10-34/proton
+eq="$HOME/.steam/steam/steamapps/common/Everquest F2P"
+"$proton" run "$PWD/build/linux-x64/bin/release/MacroQuest.exe" &
+sleep 15; "$proton" run "$eq/eqgame.exe" patchme &
+sleep 15; "$proton" run "$eq/eqgame.exe" patchme &
+```
+
+- Use absolute paths.
+- Patch the game through Steam after each EverQuest update.
+- The eqlib offsets must match the client build.
+- Logs are written to `bin/release/Logs`. Crashpad errors there are expected.
