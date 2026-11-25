@@ -57,6 +57,19 @@ while read -r win; do
     [[ -n "$win" ]] && seen["$win"]=1
 done < <(eq_windows)
 
+# MacroQuest's App Compatibility check errors out (popup) when the AppCompatFlags
+# keys are missing, which they are in a fresh Wine prefix. Create them empty once.
+pfx="$STEAM_COMPAT_DATA_PATH/pfx"
+for entry in HKLM:system.reg HKCU:user.reg; do
+    hive="${entry%%:*}"
+    # .reg files store the key with doubled backslashes.
+    grep -qi 'AppCompatFlags\\\\Layers\]' "$pfx/${entry#*:}" 2>/dev/null && continue
+    printf 'creating %s AppCompatFlags key in the prefix\n' "$hive"
+    # proton's steam.exe wrapper won't start builtins like reg; use its wine directly.
+    WINEPREFIX="$pfx" "$(dirname "$proton")/files/bin/wine" reg add "$hive\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags\\Layers" /f >/dev/null 2>&1 \
+        || die "failed to create $hive AppCompatFlags key"
+done
+
 # MacroQuest.exe relaunches as a randomly named copy with /spawnedprocess; match
 # that Wine process, not a leftover proton/steam.exe wrapper.
 if pgrep -f '^[A-Za-z]:\\.*\.exe /spawnedprocess' >/dev/null; then
