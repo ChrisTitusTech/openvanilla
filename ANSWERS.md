@@ -641,6 +641,15 @@
     processes, so all three ran under one wineserver.
   - The user stated that multiboxing is "generally done with patchme
     outside of steam and not using its launcher".
+  - **Real-client test:** two `eqgame.exe patchme` clients ran together,
+    each started 15 seconds apart with its own `proton run`.
+    - There were two `eqgame.exe` processes, one wineserver, and two
+      `EverQuest` X11 windows.
+    - Both rendered the in-game Daybreak EULA screen through DXVK.
+    - The setting `SteamAppId=SteamGameId=205710` was also set.
+  - `proton run` needs the full path to `eqgame.exe`. With a relative path,
+    Proton's `steam.exe` failed with `Failed to create process
+    L"eqgame.exe patchme": 2` (file not found).
 - **Consequences:**
   - `patchme` skips patching. After each EverQuest update, run the game once
     through Steam or LaunchPad to patch, before launching with `patchme`.
@@ -650,7 +659,7 @@
     can automate this.
   - Every client must use the same Proton build and prefix. Mixing them
     starts a second wineserver and breaks named pipes.
-  - An actual multi-client `eqgame.exe` test is still pending in the
-    verification environment.
+  - Login past the EULA and character select with several clients has not
+    been tested yet.
 - **Revisit when:** Steam-linked accounts can't log in without Steam, or a
   Proton update starts separate wineservers per `proton run`.
