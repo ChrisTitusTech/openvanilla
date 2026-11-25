@@ -521,6 +521,13 @@ static bool HookSlot(const void* object, void* detour, std::string_view name)
 	return object && HookSlot(*(void***)object, SlotOf<Fn>(), detour, name);
 }
 
+// Function pointers only convert implicitly to void* as an MSVC extension.
+template <auto Fn, typename R, typename... Args>
+static bool HookSlot(const void* object, R (*detour)(Args...), std::string_view name)
+{
+	return HookSlot<Fn>(object, reinterpret_cast<void*>(detour), name);
+}
+
 // The original function behind a hooked slot. Call it as fn(self, args...).
 template <auto Fn>
 static auto Original(const void* self)

@@ -683,7 +683,7 @@ CXStr Anonymize(const CXStr& Text)
 	return CXStr(new_text);
 }
 
-DETOUR_TRAMPOLINE_DEF(float, GetGaugeValueFromEQ_Trampoline, (int, CXStr*, bool*, unsigned long*))
+DETOUR_TRAMPOLINE_FN(float, GetGaugeValueFromEQ_Trampoline, (int, CXStr*, bool*, unsigned long*))
 float GetGaugeValueFromEQ_Detour(int EQType, CXStr* Str, bool* arg3, unsigned long* Color)
 {
 	float ret = GetGaugeValueFromEQ_Trampoline(EQType, Str, arg3, Color);

@@ -145,7 +145,6 @@ macro(target_Common_props TARGET_NAME)
         "/GS-"
         "$<$<CONFIG:Debug>:/Od>"
         "/MP"
-        "/std:c++17"
     )
     
     # ---------------------------------------------------------------------
@@ -155,6 +154,7 @@ macro(target_Common_props TARGET_NAME)
     target_link_directories(${TARGET_NAME} PRIVATE
         "${CMAKE_BINARY_DIR}/bin"
         "${CMAKE_BINARY_DIR}/lib"
+        "${CMAKE_BINARY_DIR}/lib/${MQBinaryDirName}"
 #        "${PlatformLibraryDirectories}"
 #        "${VCPKG_LibraryDirs}"
 #        "${MQLibDir}"

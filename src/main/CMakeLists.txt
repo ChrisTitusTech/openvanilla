@@ -86,7 +86,6 @@ set(MQ2Main_HEADERS
     "emu/EmuExtensions.h"
     "GraphicsEngine.h"
     "GraphicsResources.h"
-    "ImGuiAlphaMask.h"
     "ImGuiBackend.h"
     "ImGuiManager.h"
     "Logging.h"
@@ -127,7 +126,6 @@ set(MQ2Main_OTHERFILES
     "../../data/resources/CHANGELOG.md"
     "../../data/resources/Zones.ini"
     "../../LICENSE.md"
-    "../../data/resources/ItemDB.txt"
 )
 
 source_group("Resource Files" FILES ${MQ2Main_OTHERFILES})
@@ -226,6 +224,7 @@ set(MQ2Main_SOURCES
     "MQCommandAPI.cpp"
     "MQCommands.cpp"
     "MQ2DeveloperTools.cpp"
+    "MQGameFaceInspector.cpp"
     "MQInputAPI.cpp"
     "MQ2Data.cpp"
     "MQActorAPI.cpp"
@@ -465,7 +464,7 @@ add_custom_command(TARGET MQ2Main PRE_BUILD
 # ---------------------------------------------------------------------
 
 add_custom_command(TARGET MQ2Main POST_BUILD
-    COMMAND powershell.exe -ExecutionPolicy Bypass -NoProfile -NonInteractive -File "${CMAKE_SOURCE_DIR}/tools/build_scripts/MQ2Main_PostBuild.ps1" "${CMAKE_SOURCE_DIR}/data" "${CMAKE_BINARY_DIR}/bin/$<CONFIG>" ${CMAKE_GENERATOR_PLATFORM}
+    COMMAND powershell.exe -ExecutionPolicy Bypass -NoProfile -NonInteractive -File "${CMAKE_SOURCE_DIR}/tools/build_scripts/MQ2Main_PostBuild.ps1" "${CMAKE_SOURCE_DIR}/data" "${CMAKE_BINARY_DIR}/bin/$<IF:$<CONFIG:Debug>,debug,release>" ${CMAKE_GENERATOR_PLATFORM}
     COMMENT "Performing PostBuild for ${PROJECT_NAME}..."
     VERBATIM
 )

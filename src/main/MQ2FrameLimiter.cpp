@@ -426,7 +426,7 @@ public:
 void Throttler_Detour(uint32_t);
 void(*Throttler_Trampoline)(uint32_t);
 #else
-DETOUR_TRAMPOLINE_DEF(void, Throttler_Trampoline, ());
+DETOUR_TRAMPOLINE_FN(void, Throttler_Trampoline, ());
 void Throttler_Detour()
 {
 	// If DoThrottleFrameRate returns false, then it is disabled and we

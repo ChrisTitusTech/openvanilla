@@ -90,7 +90,7 @@ public:
 	}
 };
 
-DETOUR_TRAMPOLINE_DEF(HRESULT CALLBACK, DInput_GetDeviceData_Trampoline, (IDirectInputDevice8A* This, DWORD cbObjectData, LPDIDEVICEOBJECTDATA rgdod, LPDWORD pdwInOut, DWORD dwFlags))
+DETOUR_TRAMPOLINE_FN(HRESULT CALLBACK, DInput_GetDeviceData_Trampoline, (IDirectInputDevice8A* This, DWORD cbObjectData, LPDIDEVICEOBJECTDATA rgdod, LPDWORD pdwInOut, DWORD dwFlags))
 HRESULT CALLBACK DInput_GetDeviceData_Detour(IDirectInputDevice8A* This, DWORD cbObjectData, LPDIDEVICEOBJECTDATA rgdod, LPDWORD pdwInOut, DWORD dwFlags)
 {
 	s_inGetDeviceData = true;
@@ -159,7 +159,7 @@ HRESULT CALLBACK DInput_GetDeviceData_Detour(IDirectInputDevice8A* This, DWORD c
 }
 
 // IDirectInputDevice8_GetDeviceState
-DETOUR_TRAMPOLINE_DEF(HRESULT CALLBACK, DInput_GetDeviceState_Trampoline, (IDirectInputDevice8A* This, DWORD cbData, void* lpvData))
+DETOUR_TRAMPOLINE_FN(HRESULT CALLBACK, DInput_GetDeviceState_Trampoline, (IDirectInputDevice8A* This, DWORD cbData, void* lpvData))
 HRESULT CALLBACK DInput_GetDeviceState_Detour(IDirectInputDevice8A* This, DWORD cbData, void* lpvData)
 {
 	s_inGetDeviceState = true;
@@ -184,7 +184,7 @@ HRESULT CALLBACK DInput_GetDeviceState_Detour(IDirectInputDevice8A* This, DWORD 
 	return hResult;
 }
 
-DETOUR_TRAMPOLINE_DEF(int64_t, ProcessDeviceEvents_Trampoline, (SDeviceInputEvent* ev))
+DETOUR_TRAMPOLINE_FN(int64_t, ProcessDeviceEvents_Trampoline, (SDeviceInputEvent* ev))
 int64_t ProcessDeviceEvents_Detour(SDeviceInputEvent* ev)
 {
 	const bool delayed = (ev->EventStateBitmask & (SDeviceInputState_Blocked | SDeviceInputState_Pending)) == ev->EventStateBitmask;
@@ -714,7 +714,7 @@ static uintptr_t DispatchMessageA_Ptr = 0;
 static uintptr_t TranslateMessage_Ptr = 0;
 static thread_local const MSG* s_lastTranslateMessagePtr = nullptr;
 
-DETOUR_TRAMPOLINE_DEF(BOOL WINAPI, TranslateMessage_Trampoline, (const MSG* lpMsg));
+DETOUR_TRAMPOLINE_FN(BOOL WINAPI, TranslateMessage_Trampoline, (const MSG* lpMsg));
 static BOOL WINAPI TranslateMessage_Detour(const MSG* lpMsg)
 {
 	s_lastTranslateMessagePtr = lpMsg;
@@ -722,7 +722,7 @@ static BOOL WINAPI TranslateMessage_Detour(const MSG* lpMsg)
 	return TranslateMessage_Trampoline(lpMsg);
 }
 
-DETOUR_TRAMPOLINE_DEF(LRESULT WINAPI, DispatchMessageA_Trampoline, (const MSG* lpMsg));
+DETOUR_TRAMPOLINE_FN(LRESULT WINAPI, DispatchMessageA_Trampoline, (const MSG* lpMsg));
 static LRESULT WINAPI DispatchMessageA_Detour(const MSG* lpMsg)
 {
 	if (s_lastTranslateMessagePtr != lpMsg)

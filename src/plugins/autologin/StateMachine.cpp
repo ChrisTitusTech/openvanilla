@@ -36,9 +36,12 @@ class CharacterSelectWait;
 class InGame;
 class InGameCamping;
 
+// Defined after the state classes; is_in_state needs complete types.
+static bool IsInConnectState();
+
 static std::shared_ptr<ProfileRecord> GetInitialLoginProfile(CEditWnd* pEditWnd)
 {
-	if (Login::is_in_state<Connect>() || Login::is_in_state<ConnectConfirm>())
+	if (IsInConnectState())
 	{
 		// initialize input to empty, we will try to populate it from the command line first
 		std::string input;
@@ -372,6 +375,11 @@ public:
 		transit<Wait>();
 	}
 };
+
+static bool IsInConnectState()
+{
+	return Login::is_in_state<Connect>() || Login::is_in_state<ConnectConfirm>();
+}
 
 class ServerSelect : public Login
 {

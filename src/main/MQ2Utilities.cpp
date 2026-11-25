@@ -2043,16 +2043,16 @@ bool EvaluateRPN(CalcOp* pList, int Size, double& Result)
 
 #define StackEmpty()           (nStack==0)
 #define StackTop()             (pStack[nStack])
-#define StackSetTop(do_assign) {pStack[nStack]##do_assign;}
+#define StackSetTop(do_assign) {pStack[nStack] do_assign;}
 #define StackPush(val)         {nStack++;pStack[nStack]=val;}
 #define StackPop()             {if (!nStack) {FatalError("Illegal arithmetic in calculation"); return 0;}; nStack--;}
 
-#define BinaryIntOp(op)        {int RightSide=(int)StackTop();StackPop();StackSetTop(=(double)(((int)StackTop())##op##RightSide));}
-#define BinaryOp(op)           {double RightSide=StackTop();StackPop();StackSetTop(=StackTop()##op##RightSide);}
-#define BinaryAssign(op)       {double RightSide=StackTop();StackPop();StackSetTop(##op##=RightSide);}
+#define BinaryIntOp(op)        {int RightSide=(int)StackTop();StackPop();StackSetTop(=(double)(((int)StackTop()) op RightSide));}
+#define BinaryOp(op)           {double RightSide=StackTop();StackPop();StackSetTop(=StackTop() op RightSide);}
+#define BinaryAssign(op)       {double RightSide=StackTop();StackPop();StackSetTop(op##=RightSide);}
 
-#define UnaryIntOp(op)         {StackSetTop(=op##((int)StackTop()));}
-#define UnaryOp(op)            {StackSetTop(=op##(StackTop()));}
+#define UnaryIntOp(op)         {StackSetTop(=op((int)StackTop()));}
+#define UnaryOp(op)            {StackSetTop(=op(StackTop()));}
 
 	for (int i = 0; i < Size; i++)
 	{

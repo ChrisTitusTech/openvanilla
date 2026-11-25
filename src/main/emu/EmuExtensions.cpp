@@ -87,7 +87,7 @@ static void DispatchSpellLink(const char* linkData)
 	}
 }
 
-DETOUR_TRAMPOLINE_DEF(void, ConvertItemTags_Trampoline, (CXStr&, bool));
+DETOUR_TRAMPOLINE_FN(void, ConvertItemTags_Trampoline, (CXStr&, bool));
 void ConvertItemTags_Detour(CXStr& text, bool canDisplay)
 {
 	char* p = &text[0];
@@ -343,7 +343,7 @@ constexpr int VTABLE_INDEX_GetParameterByName = 9;
 static uintptr_t s_GetParameterByNameAddress = 0;
 static bool s_GetParameterByNameHooked = false;
 
-DETOUR_TRAMPOLINE_DEF(D3DXHANDLE WINAPI, GetParameterByName_Trampoline, (ID3DXEffect*, D3DXHANDLE, LPCSTR));
+DETOUR_TRAMPOLINE_FN(D3DXHANDLE WINAPI, GetParameterByName_Trampoline, (ID3DXEffect*, D3DXHANDLE, LPCSTR));
 D3DXHANDLE WINAPI GetParameterByName_Detour(ID3DXEffect* pEffect, D3DXHANDLE hParameter, LPCSTR pName)
 {
 	if (pName)

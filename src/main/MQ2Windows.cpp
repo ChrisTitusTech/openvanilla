@@ -231,7 +231,7 @@ public:
 	}
 };
 
-DETOUR_TRAMPOLINE_DEF(bool, DoesFileExist_Trampoline, (const char*))
+DETOUR_TRAMPOLINE_FN(bool, DoesFileExist_Trampoline, (const char*))
 bool DoesFileExist(const char* filename)
 {
 	const std::filesystem::path localfile = filename;
@@ -264,7 +264,7 @@ public:
 };
 
 // Hook for fopen in eqgraphics.dll
-DETOUR_TRAMPOLINE_DEF(FILE*, fopen_eqgraphics_trampoline, (const char* filename, const char* mode))
+DETOUR_TRAMPOLINE_FN(FILE*, fopen_eqgraphics_trampoline, (const char* filename, const char* mode))
 FILE* fopen_eqgraphics_detour(const char* filename, const char* mode)
 {
 	// Only intercept reads
@@ -1877,7 +1877,7 @@ static CascadeItemSubMenu* GetOrCreateSubMenuFromName(CascadeItemSubMenu* root, 
 	return GetOrCreateSubMenuFromName(found, tail);
 }
 
-DETOUR_TRAMPOLINE_DEF(CascadeItemArray*, CreateCascadeMenuItems_Trampoline, ())
+DETOUR_TRAMPOLINE_FN(CascadeItemArray*, CreateCascadeMenuItems_Trampoline, ())
 CascadeItemArray* CreateCascadeMenuItems_Detour()
 {
 	CascadeItemArray* array = CreateCascadeMenuItems_Trampoline();

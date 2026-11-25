@@ -4,9 +4,10 @@ function Copy-Latestfile {
 	Param($File1, $File2, $Relative)
 	#Write-Host "Copy $File1 to $File2 ..."
 
-	if (![System.IO.File]::Exists($File1)) {
+	if (-Not (Test-Path -Path $File1 -PathType Leaf)) {
 		return
 	}
+	$File1 = (Resolve-Path -Path $File1).Path
 	$File1Date = Get-Item $File1 | ForEach-Object{ $_.LastWriteTimeUtc }
 
 	# make sure dest directory exists
@@ -18,7 +19,7 @@ function Copy-Latestfile {
 		New-Item -ItemType Directory -Path $dir | Out-Null
 	}
 
-	if (![System.IO.File]::Exists($File2)) {
+	if (-Not (Test-Path -Path $File2 -PathType Leaf)) {
 		try {
 			New-Item -ItemType HardLink -Path $File2 -Value $File1 | Out-Null
 

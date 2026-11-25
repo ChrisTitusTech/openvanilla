@@ -79,7 +79,7 @@ TokenTextParam::TokenTextParam(const char* Data, DWORD Length)
 	}
 }
 
-DETOUR_TRAMPOLINE_DEF(void, msgTokenTextParam__Trampoline, (const char*, DWORD))
+DETOUR_TRAMPOLINE_FN(void, msgTokenTextParam__Trampoline, (const char*, DWORD))
 void msgTokenTextParam__Detour(const char* Data, DWORD Length)
 {
 	if (Data)

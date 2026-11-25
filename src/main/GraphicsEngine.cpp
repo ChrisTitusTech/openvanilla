@@ -96,7 +96,7 @@ public:
 
 // Mouse hook prevents mouse events from reaching EQ when imgui captures
 // the mouse. Needed because ImGui uses win32 events but EQ uses direct input.
-DETOUR_TRAMPOLINE_DEF(void, ProcessMouseEvents_Trampoline, ())
+DETOUR_TRAMPOLINE_FN(void, ProcessMouseEvents_Trampoline, ())
 void ProcessMouseEvents_Detour()
 {
 	if (gbRenderImGui && ImGui::GetCurrentContext() != nullptr && g_pDIMouse != nullptr)
@@ -173,7 +173,7 @@ void ProcessMouseEvents_Detour()
 #if defined(__HandleMouseWheel_x)
 // The mouse wheel hook prevents EQ from handling scroll events while imgui has the
 // mouse captured.
-DETOUR_TRAMPOLINE_DEF(void, HandleMouseWheel_Trampoline, (int))
+DETOUR_TRAMPOLINE_FN(void, HandleMouseWheel_Trampoline, (int))
 void HandleMouseWheel_Detour(int offset)
 {
 	if (gbRenderImGui && ImGui::GetCurrentContext() != nullptr)
@@ -195,7 +195,7 @@ void HandleMouseWheel_Detour(int offset)
 
 // Keyboard hook prevents keyboard events from reaching EQ when imgui captures
 // the keyboard. Needed because ImGui uses win32 events but EQ uses direct input.
-DETOUR_TRAMPOLINE_DEF(uint32_t, ProcessKeyboardEvents_Trampoline, ())
+DETOUR_TRAMPOLINE_FN(uint32_t, ProcessKeyboardEvents_Trampoline, ())
 uint32_t ProcessKeyboardEvents_Detour()
 {
 	if (gbRenderImGui && ImGui::GetCurrentContext() != nullptr)
@@ -272,7 +272,7 @@ public:
 #endif
 
 // Forwards events to ImGui. If ImGui consumes the event, we won't pass it to the game.
-DETOUR_TRAMPOLINE_DEF(LRESULT WINAPI, WndProc_Trampoline, (HWND, UINT, WPARAM, LPARAM))
+DETOUR_TRAMPOLINE_FN(LRESULT WINAPI, WndProc_Trampoline, (HWND, UINT, WPARAM, LPARAM))
 LRESULT WINAPI WndProc_Detour(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	if (OverlayWndProcHandler(hWnd, msg, wParam, lParam))

@@ -566,7 +566,7 @@ void Cmd_Loginchar(SPAWNINFO* pChar, char* szLine)
 	}
 }
 
-DETOUR_TRAMPOLINE_DEF(DWORD WINAPI, GetPrivateProfileStringA_Trampoline, (LPCSTR, LPCSTR, LPCSTR, LPSTR, DWORD, LPCSTR))
+DETOUR_TRAMPOLINE_FN(DWORD WINAPI, GetPrivateProfileStringA_Trampoline, (LPCSTR, LPCSTR, LPCSTR, LPSTR, DWORD, LPCSTR))
 
 DWORD WINAPI GetPrivateProfileStringA_Detour(LPCSTR lpAppName, LPCSTR lpKeyName, LPCSTR lpDefault, LPSTR lpReturnedString, DWORD nSize, LPCSTR lpFileName)
 {
@@ -583,7 +583,7 @@ DWORD WINAPI GetPrivateProfileStringA_Detour(LPCSTR lpAppName, LPCSTR lpKeyName,
 	return GetPrivateProfileStringA_Trampoline(lpAppName, lpKeyName, lpDefault, lpReturnedString, nSize, lpFileName);
 }
 
-DETOUR_TRAMPOLINE_DEF(BOOL WINAPI, WritePrivateProfileStringA_Trampoline, (LPCSTR, LPCSTR, LPCSTR, LPCSTR))
+DETOUR_TRAMPOLINE_FN(BOOL WINAPI, WritePrivateProfileStringA_Trampoline, (LPCSTR, LPCSTR, LPCSTR, LPCSTR))
 BOOL WINAPI WritePrivateProfileStringA_Detour(LPCSTR lpAppName, LPCSTR lpKeyName, LPCSTR lpString, LPCSTR lpFileName)
 {
 	if (lpFileName)
@@ -599,7 +599,7 @@ BOOL WINAPI WritePrivateProfileStringA_Detour(LPCSTR lpAppName, LPCSTR lpKeyName
 	return WritePrivateProfileStringA_Trampoline(lpAppName, lpKeyName, lpString, lpFileName);
 }
 
-DETOUR_TRAMPOLINE_DEF(UINT WINAPI, GetPrivateProfileIntA_Tramp, (LPCSTR, LPCSTR, INT, LPCSTR))
+DETOUR_TRAMPOLINE_FN(UINT WINAPI, GetPrivateProfileIntA_Tramp, (LPCSTR, LPCSTR, INT, LPCSTR))
 UINT WINAPI GetPrivateProfileIntA_Detour(LPCSTR lpAppName, LPCSTR lpKeyName, INT nDefault, LPCSTR lpFileName)
 {
 	if (lpFileName)

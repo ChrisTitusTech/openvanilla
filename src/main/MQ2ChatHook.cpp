@@ -186,7 +186,7 @@ public:
 };
 
 #if HAS_CHAT_TIMESTAMPS
-DETOUR_TRAMPOLINE_DEF(void, OutputTextToLog_Trampoline, (const char*));
+DETOUR_TRAMPOLINE_FN(void, OutputTextToLog_Trampoline, (const char*));
 void OutputTextToLog_Detour(const char* szMsg)
 {
 	if (gbTimeStampChat && szMsg && *szMsg)

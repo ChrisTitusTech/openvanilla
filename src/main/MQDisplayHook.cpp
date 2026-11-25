@@ -113,7 +113,7 @@ public:
 	}
 };
 
-DETOUR_TRAMPOLINE_DEF(void, DrawNetStatus_Trampoline, (uint16_t x, uint16_t y, void* udpConnection, uint32_t bps))
+DETOUR_TRAMPOLINE_FN(void, DrawNetStatus_Trampoline, (uint16_t x, uint16_t y, void* udpConnection, uint32_t bps))
 void DrawNetStatus_Detour(uint16_t x, uint16_t y, void* udpConnection, uint32_t bps)
 {
 	DrawHUDParams[0] = x + gNetStatusXPos;

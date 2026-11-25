@@ -30,21 +30,25 @@ cmake_minimum_required(VERSION 3.30)
 # ============================================================================
 # Requirements checks
 # ============================================================================
-# Only Visual Studio generators make sense for MQ due to architecture restrictions
-if(NOT CMAKE_GENERATOR MATCHES "Visual Studio")
-    message(FATAL_ERROR "Only Visual Studio generators are viable for MacroQuest compilation")
+# Visual Studio generators take the architecture from -A. Single-config generators
+# (e.g. Ninja with a clang-cl cross toolchain) must set MQ_PLATFORM to x64 or Win32.
+set(MQ_PLATFORM "" CACHE STRING "Target platform (x64 or Win32) for non-Visual Studio generators")
+if(CMAKE_GENERATOR MATCHES "Visual Studio")
+    set(MQ_PLATFORM "${CMAKE_GENERATOR_PLATFORM}")
+elseif(NOT MQ_PLATFORM)
+    message(FATAL_ERROR "Only Visual Studio generators are viable for MacroQuest compilation, unless MQ_PLATFORM is set")
 endif()
 
 # Validate architecture is specified for Visual Studio generator
 # vcpkg triplet setup MUST be before project() call, do it here because it's convenient
-# Determine architecture from CMAKE_GENERATOR_PLATFORM (set by -A flag)
-if(CMAKE_GENERATOR_PLATFORM STREQUAL "x64")
+# Determine architecture from MQ_PLATFORM (CMAKE_GENERATOR_PLATFORM, set by -A flag, for Visual Studio)
+if(MQ_PLATFORM STREQUAL "x64")
     set(VCPKG_TARGET_TRIPLET "x64-windows-static" CACHE STRING "")
     set(VCPKG_ARCH "x64" CACHE STRING "")
-elseif(CMAKE_GENERATOR_PLATFORM STREQUAL "Win32")
+elseif(MQ_PLATFORM STREQUAL "Win32")
     set(VCPKG_TARGET_TRIPLET "x86-windows-static" CACHE STRING "")
     set(VCPKG_ARCH "x86" CACHE STRING "")
-elseif(NOT CMAKE_GENERATOR_PLATFORM)
+elseif(NOT MQ_PLATFORM)
     message(FATAL_ERROR
             "Architecture must be specified with -A flag:\n"
             "  Win32: cmake -B build_win32 -G \"Visual Studio 17 2022\" -A Win32\n"
@@ -52,13 +56,13 @@ elseif(NOT CMAKE_GENERATOR_PLATFORM)
     )
 else()
     message(FATAL_ERROR
-            "Only Win32 and x64 platforms are supported. Got: ${CMAKE_GENERATOR_PLATFORM}"
+            "Only Win32 and x64 platforms are supported. Got: ${MQ_PLATFORM}"
     )
 endif()
 
 set(VCPKG_INSTALL_OPTIONS "--allow-unsupported")
 
-message(STATUS "Configuring for platform: ${CMAKE_GENERATOR_PLATFORM}")
+message(STATUS "Configuring for platform: ${MQ_PLATFORM}")
 
 # ============================================================================
 # Options
@@ -218,7 +222,7 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 set(CMAKE_CONFIGURATION_TYPES "Debug;Release" CACHE STRING "Available build configurations" FORCE)
 
 # Toolset selection
-if(NOT CMAKE_GENERATOR_TOOLSET)
+if(CMAKE_GENERATOR MATCHES "Visual Studio" AND NOT CMAKE_GENERATOR_TOOLSET)
     set(CMAKE_GENERATOR_TOOLSET "v143" CACHE STRING "Choose MSVC toolset." FORCE)
 endif()
 
@@ -239,9 +243,9 @@ project(MacroQuest
 find_package(detours REQUIRED)
 find_package(fmt REQUIRED)
 find_package(spdlog REQUIRED)
-string(REPLACE "/D_WINDOWS" "" CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
-string(REPLACE "/DNDEBUG" "" CMAKE_CXX_FLAGS_RELEASE ${CMAKE_CXX_FLAGS_RELEASE})
-string(REPLACE "/DWIN32" "" CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
+string(REPLACE "/D_WINDOWS" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+string(REPLACE "/DNDEBUG" "" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
+string(REPLACE "/DWIN32" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 
 if(MQ_REGENERATE_SOLUTION)
     # just generate the solution, do nothing else

@@ -90,7 +90,7 @@ public:
 //----------------------------------------------------------------------------
 
 // Forwards events to ImGui. If ImGui consumes the event, we won't pass it to the game.
-DETOUR_TRAMPOLINE_DEF(LRESULT WINAPI, EQMain__WndProc_Trampoline, (HWND, UINT, WPARAM, LPARAM))
+DETOUR_TRAMPOLINE_FN(LRESULT WINAPI, EQMain__WndProc_Trampoline, (HWND, UINT, WPARAM, LPARAM))
 LRESULT WINAPI EQMain__WndProc_Detour(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	if (OverlayWndProcHandler(hWnd, msg, wParam, lParam))

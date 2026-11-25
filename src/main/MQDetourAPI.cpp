@@ -140,12 +140,12 @@ static AddressDetourState IsAddressDetoured(uintptr_t address, size_t width)
 	return AddressDetourState::None;
 }
 
-DETOUR_TRAMPOLINE_DEF(int, memcheck0_tramp, (unsigned char* buffer, size_t count))
+DETOUR_TRAMPOLINE_FN(int, memcheck0_tramp, (unsigned char* buffer, size_t count))
 int memcheck0(unsigned char* buffer, size_t count);
-DETOUR_TRAMPOLINE_DEF(int, memcheck1_tramp, (unsigned char* buffer, size_t count, mckey key))
+DETOUR_TRAMPOLINE_FN(int, memcheck1_tramp, (unsigned char* buffer, size_t count, mckey key))
 int memcheck1(unsigned char* buffer, size_t count, mckey key);
 #if defined(__MemChecker4_x)
-DETOUR_TRAMPOLINE_DEF(int WINAPI, memcheck4_tramp, (unsigned char* buffer, size_t* count, void* ptr))
+DETOUR_TRAMPOLINE_FN(int WINAPI, memcheck4_tramp, (unsigned char* buffer, size_t* count, void* ptr))
 int WINAPI memcheck4(unsigned char* buffer, size_t* count, void* ptr);
 #endif
 
@@ -288,7 +288,7 @@ int WINAPI memcheck4(unsigned char* buffer, size_t* count_, void* ptr)
 }
 #endif // defined(__MemChecker4_x)
 
-DETOUR_TRAMPOLINE_DEF(uint64_t, decompress_block_trampoline, (uint64_t ctx))
+DETOUR_TRAMPOLINE_FN(uint64_t, decompress_block_trampoline, (uint64_t ctx))
 uint64_t decompress_block_detour(uint64_t ctx)
 {
 	if (s_inMemCheck4)
@@ -299,7 +299,7 @@ uint64_t decompress_block_detour(uint64_t ctx)
 
 void MQInitializeLogin();
 
-DETOUR_TRAMPOLINE_DEF(BOOL WINAPI, FindModules_Trampoline, (HANDLE, HMODULE*, DWORD, DWORD*))
+DETOUR_TRAMPOLINE_FN(BOOL WINAPI, FindModules_Trampoline, (HANDLE, HMODULE*, DWORD, DWORD*))
 BOOL WINAPI FindModules_Detour(HANDLE hProcess, HMODULE* hModule, DWORD cb, DWORD* lpcbNeeded)
 {
 	if (s_inMemCheck4 != 1) return FindModules_Trampoline(hProcess, hModule, cb, lpcbNeeded);
@@ -311,7 +311,7 @@ BOOL WINAPI FindModules_Detour(HANDLE hProcess, HMODULE* hModule, DWORD cb, DWOR
 	return result ? 1 : 0;
 }
 
-DETOUR_TRAMPOLINE_DEF(BOOL WINAPI, FindProcesses_Trampoline, (DWORD*, DWORD, DWORD*))
+DETOUR_TRAMPOLINE_FN(BOOL WINAPI, FindProcesses_Trampoline, (DWORD*, DWORD, DWORD*))
 BOOL WINAPI FindProcesses_Detour(DWORD* lpidProcess, DWORD cb, DWORD* lpcbNeeded)
 {
 	if (s_inMemCheck4 != 1) return FindProcesses_Trampoline(lpidProcess, cb, lpcbNeeded);
@@ -323,7 +323,7 @@ BOOL WINAPI FindProcesses_Detour(DWORD* lpidProcess, DWORD cb, DWORD* lpcbNeeded
 	return result ? 1 : 0;
 }
 
-DETOUR_TRAMPOLINE_DEF(BOOL WINAPI, Module32Next_Trampoline, (HANDLE, LPMODULEENTRY32))
+DETOUR_TRAMPOLINE_FN(BOOL WINAPI, Module32Next_Trampoline, (HANDLE, LPMODULEENTRY32))
 static BOOL FilterModuleEntry(HANDLE hSnapshot, LPMODULEENTRY32 lpme)
 {
 	while (IsMacroQuestModule(lpme->hModule, true))
@@ -345,7 +345,7 @@ BOOL WINAPI Module32Next_Detour(HANDLE hSnapshot, LPMODULEENTRY32 lpme)
 	return FALSE;
 }
 
-DETOUR_TRAMPOLINE_DEF(BOOL WINAPI, Module32First_Trampoline, (HANDLE, LPMODULEENTRY32))
+DETOUR_TRAMPOLINE_FN(BOOL WINAPI, Module32First_Trampoline, (HANDLE, LPMODULEENTRY32))
 BOOL WINAPI Module32First_Detour(HANDLE hSnapshot, LPMODULEENTRY32 lpme)
 {
 	if (Module32First_Trampoline(hSnapshot, lpme))
@@ -356,7 +356,7 @@ BOOL WINAPI Module32First_Detour(HANDLE hSnapshot, LPMODULEENTRY32 lpme)
 	return FALSE;
 }
 
-DETOUR_TRAMPOLINE_DEF(BOOL WINAPI, Process32Next_Trampoline, (HANDLE, LPPROCESSENTRY32))
+DETOUR_TRAMPOLINE_FN(BOOL WINAPI, Process32Next_Trampoline, (HANDLE, LPPROCESSENTRY32))
 static BOOL FilterProcessEntry(HANDLE hSnapshot, LPPROCESSENTRY32 lppe)
 {
 	while (IsMacroQuestProcess(lppe->th32ProcessID, true)
@@ -379,7 +379,7 @@ BOOL WINAPI Process32Next_Detour(HANDLE hSnapshot, LPPROCESSENTRY32 lppe)
 	return FALSE;
 }
 
-DETOUR_TRAMPOLINE_DEF(BOOL WINAPI, Process32First_Trampoline, (HANDLE, LPPROCESSENTRY32))
+DETOUR_TRAMPOLINE_FN(BOOL WINAPI, Process32First_Trampoline, (HANDLE, LPPROCESSENTRY32))
 BOOL WINAPI Process32First_Detour(HANDLE hSnapshot, LPPROCESSENTRY32 lppe)
 {
 	if (Process32First_Trampoline(hSnapshot, lppe))
