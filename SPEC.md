@@ -18,7 +18,7 @@ feature-parity bar are decided so that implementation can be phased.
 Provisional; finalize after **Feature parity bar** is answered.
 
 - [ ] On a supported Linux distribution, a documented procedure starts
-      `eqgame.exe` and `MacroQuest.exe` in the same Wine Staging 11.20 prefix with DXVK, and
+      `eqgame.exe` (Steam, GE-Proton) and `MacroQuest.exe` in the same Proton prefix, and
       `mq2main.dll` loads into the client automatically.
 - [ ] Each component listed as required by **Feature parity bar** works in
       that environment, verified by a written manual test checklist.
@@ -29,7 +29,7 @@ Provisional; finalize after **Feature parity bar** is answered.
       (for example, `MQGameFaceInspector.cpp`).
 - [ ] On a Linux host, a documented command produces `MacroQuest.exe`,
       `mq2main.dll`, and the required plugin DLLs for Live x64, and they load
-      under Wine Staging 11.20.
+      in the GE-Proton prefix.
 
 ## In scope
 
@@ -45,8 +45,9 @@ Provisional; finalize after **Feature parity bar** is answered.
 - Supporting, testing, or documenting native Windows use of this fork.
   Windows keeps working only to the extent upstream code does.
 - EverQuest Test and Emulator clients (RoF2, ToB) and their `eqlib` branches.
-- Official support for Proton, Lutris, Bottles, or other Wine derivatives
-  (they may work, but are not tested or documented).
+- Official support for Lutris, Bottles, plain Wine, or Proton builds other
+  than the GE-Proton baseline (they may work, but are not tested or
+  documented).
 - A native Linux (ELF) MacroQuest, loader, or memory-reading tool (options B
   and C in Q-002).
 - Injecting from Linux via `ptrace` or `/proc/<pid>/mem`.
@@ -65,8 +66,10 @@ Provisional; finalize after **Feature parity bar** is answered.
 
 - MacroQuest stays a set of Windows binaries; the loader and `mq2main.dll`
   run inside the Wine prefix alongside `eqgame.exe`.
-- The supported runtime is plain Wine (upstream WineHQ builds or distro
-  packages), with `eqgame.exe` and MacroQuest in the same `WINEPREFIX`.
+- The supported runtime is EverQuest Live installed through Steam (app
+  205710) and run with GE-Proton. MacroQuest runs in the game's Proton
+  prefix (`steamapps/compatdata/205710/pfx`) with the same Proton build and
+  wineserver as `eqgame.exe`.
 - The fork's target platform is Linux running `eqgame.exe` and MacroQuest
   under Wine. Changes must not deliberately break Windows behavior shared
   with upstream (so small fixes stay upstreamable), but Windows is not
@@ -114,8 +117,8 @@ Provisional; finalize after **Feature parity bar** is answered.
   `ci_emu_rof2`, `ci_emu_tob`, `ov_build_beta_emu_rof2`,
   `ov_build_release_emu_rof2`, `ov_build_release_emu_tob`,
   `ov_build_release_test`.
-- The baseline and minimum tested Wine is `wine-11.20 (Staging)`. Direct3D
-  goes through DXVK; WineD3D is not supported.
+- The baseline runtime is GE-Proton10-34 (`wine-10.0 (Staging)`, DXVK 2.7.1).
+  Direct3D goes through DXVK; WineD3D is not supported.
 - Injection uses the existing, already-written implementation unchanged:
   `MacroQuest.exe` injects `mq2main.dll` into `eqgame.exe` with
   `CreateRemoteThread`/`LoadLibraryA` inside Wine. No new injection

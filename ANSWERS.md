@@ -58,6 +58,7 @@
 
 ## Q-005: Target Wine runtime
 
+- **Status:** Superseded by [Steam and GE-Proton runtime](#q-025-steam-and-ge-proton-runtime).
 - **Resolved:** 2026-11-25
 - **Answer:** Plain Wine (WineHQ or distro packages) is the only supported
   runtime. Proton, Lutris, and Bottles are not supported targets.
@@ -74,6 +75,7 @@
 
 ## Q-015: Wine version and graphics layer
 
+- **Status:** The Wine version is superseded by [Steam and GE-Proton runtime](#q-025-steam-and-ge-proton-runtime). The DXVK requirement still stands.
 - **Resolved:** 2026-11-25
 - **Answer:** The baseline and minimum tested Wine is `wine-11.20 (Staging)`.
   DXVK is required to translate Direct3D 9/11 to Vulkan. WineD3D is not
@@ -561,3 +563,54 @@
   - Documentation is in `tools/linux/README.md`.
 - **Revisit when:** Upstream rejects the case PR, which would turn the
   fixes into fork-only symlink shims.
+
+## Q-025: Steam and GE-Proton runtime
+
+- **Resolved:** 2026-11-25
+- **Answer:** The target runtime is EverQuest Live installed through Steam
+  and run by Steam with GE-Proton.
+  - The baseline is GE-Proton10-34, which bundles `wine-10.0 (Staging)` and
+    DXVK 2.7.1.
+  - `MacroQuest.exe` runs inside the game's own Proton prefix, so the
+    existing injector sees `eqgame.exe` there.
+  - This replaces [Target Wine runtime](#q-005-target-wine-runtime) (plain
+    Wine) and the Wine 11.20 baseline in
+    [Wine version and graphics layer](#q-015-wine-version-and-graphics-layer).
+  - DXVK is still required; GE-Proton already provides it.
+- **Rationale:** The user's working EverQuest setup is the Steam release
+  under GE-Proton, and it is the only Live install on the machine.
+  - Targeting it means testing against a setup known to run the game.
+  - Steam-linked accounts may need the Steam client to log in, which a
+    separate plain-Wine prefix might not provide.
+  - DXVK is already in the prefix.
+  - The user chose option A, "switch the target to GE-Proton", over keeping
+    plain Wine 11.20.
+- **Evidence:**
+  - The game is at `~/.steam/steam/steamapps/common/Everquest F2P/` (Steam
+    app 205710, build 22687336). `eqgame.exe` is PE32+ x86-64;
+    `LaunchPad.exe` is PE32.
+  - The prefix is `~/.steam/steam/steamapps/compatdata/205710/pfx`. Its
+    `version` file reads GE-Proton10-34, and its `d3d9`, `d3d11`, and
+    `dxgi` DLLs are DXVK.
+  - GE-Proton10-34 is at
+    `~/.local/share/Steam/compatibilitytools.d/GE-Proton10-34`.
+    `files/bin/wine --version` reports `wine-10.0 (Staging)`, and its DXVK
+    is `v2.7.1`.
+  - EverQuest has no Steam launch options set.
+- **Consequences:**
+  - Proton moves from out of scope to in scope. Lutris, Bottles, and plain
+    Wine stay untested.
+  - **Linux launch wrapper scope** now covers starting `MacroQuest.exe` in
+    the Proton prefix: Steam launch options, `proton run`, or
+    `protontricks-launch`. It must use the same Proton build and
+    wineserver as the game.
+  - **Multibox IPC across instances** now asks whether extra clients start
+    in the same Proton prefix and wineserver. Steam normally starts one
+    instance per app.
+  - Build machines still don't need Wine. Smoke tests may use either the
+    Proton prefix or `~/.wine`.
+  - Upgrading GE-Proton changes the Wine base. Record the version used in
+    each verification run.
+- **Revisit when:** GE-Proton breaks injection, EverQuest becomes
+  installable outside Steam for this account, or the user moves to another
+  Proton build.

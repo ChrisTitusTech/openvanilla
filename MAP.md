@@ -12,13 +12,13 @@ See [SPEC.md](SPEC.md#destination).
       Crashpad, Lua and luarocks, and each bundled plugin. (The in-game
       overlay is already excluded; see **Overlay requirement**.)
 - [ ] **Multibox IPC across instances** (`Q-010`) - Named pipes only work
-      inside one wineserver. Is there one shared prefix, or a cross-prefix
-      transport (TCP or Unix sockets)?
+      inside one wineserver. Can extra clients start in the same Steam
+      Proton prefix and wineserver (Steam normally starts one instance), or
+      is a cross-prefix transport (TCP or Unix sockets) needed?
 - [ ] **Linux launch wrapper scope** (`Q-014`) - Should a Linux launch
-      script set the prefix, the Wine Staging binary, the DXVK DLL overrides,
-      and other Wine environment variables, and start both
-      `MacroQuest.exe` and `eqgame.exe` so the existing injector runs? Or is
-      documentation alone enough?
+      script start `MacroQuest.exe` inside the game's GE-Proton prefix (Steam
+      launch options, `proton run`, or `protontricks-launch`) alongside the
+      Steam-launched `eqgame.exe`? Or is documentation alone enough?
 - [ ] **Verification environment** (`Q-013`) - What Live accounts, hardware
       (Vulkan-capable GPU), and Linux distribution/display server are
       available for testing, and how many clients make up the multibox test?
@@ -59,9 +59,10 @@ None.
       (`Q-002`) - Option A: Windows MacroQuest runs inside the same Wine
       prefix as `eqgame.exe`.
 - [x] [Target Wine runtime](ANSWERS.md#q-005-target-wine-runtime)
-      (`Q-005`) - Plain Wine; Proton, Lutris, and Bottles are not targets.
+      (`Q-005`) - Superseded by **Steam and GE-Proton runtime**.
 - [x] [Wine version and graphics layer](ANSWERS.md#q-015-wine-version-and-graphics-layer)
-      (`Q-015`) - Wine Staging 11.20 is the baseline; DXVK is required.
+      (`Q-015`) - DXVK is required; the Wine version is superseded by
+      **Steam and GE-Proton runtime**.
 - [x] [Injection mechanism](ANSWERS.md#q-009-injection-mechanism)
       (`Q-009`) - Keep the existing `MacroQuest.exe` injection of
       `mq2main.dll` into `eqgame.exe`; no new mechanism.
@@ -99,3 +100,6 @@ None.
 - [x] [Filename case sensitivity](ANSWERS.md#q-024-filename-case-sensitivity)
       (`Q-024`) - Fix references to match real names (one small upstreamable
       PR); symlink shims for submodules; case check after each merge.
+- [x] [Steam and GE-Proton runtime](ANSWERS.md#q-025-steam-and-ge-proton-runtime)
+      (`Q-025`) - Steam EverQuest Live under GE-Proton10-34 (Wine 10.0
+      Staging, DXVK 2.7.1); MacroQuest runs in the game's Proton prefix.
