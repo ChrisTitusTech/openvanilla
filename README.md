@@ -1,4 +1,6 @@
-# Open Vanilla
+# Open Vanilla - Noob's Linux Fork
+
+_Note: This is a direct fork of openvanilla and changed to use Linux build environment with CMAKE._
 
 Open Vanilla is a compilation of multi-boxing software for EverQuest, nearly all based on [MacroQuest](https://github.com/macroquest/macroquest) with plugins and effort from the [RedGuides community](https://www.redguides.com). 
 
