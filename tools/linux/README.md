@@ -209,8 +209,12 @@ Wine tray icons use the X11 XEmbed protocol. Panels that only host
 StatusNotifierItem icons (Quickshell, Waybar) need a bridge, or the
 MacroQuest icon ends up in an off-screen Wine tray window. A lightweight
 option is [wine-sni-bridge](https://github.com/waliori/wine-sni-bridge)
-(needs `python3-xlib`, `python3-dbus`, `python3-gobject`). Start it before
-MacroQuest, or Wine re-docks the icon when the bridge appears.
+(needs `python3-xlib`, `python3-dbus`, `python3-gobject`). Run it as a
+systemd user service (`Restart=always`) and start it before MacroQuest; if
+the bridge restarts, restart MacroQuest to get its icon back. On X11 tiling
+window managers such as dwm, change its tray window to
+`override_redirect=True`. Otherwise the WM tiles that hidden window, and
+closing it kills the bridge.
 
 - Use absolute paths.
 - Patch the game through Steam after each EverQuest update.
