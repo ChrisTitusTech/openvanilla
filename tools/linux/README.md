@@ -196,6 +196,15 @@ manager such as dwm-titus. Override `PROTON`, `EQ_DIR`, `MQ_DIR`,
 TAGS="3 7 8 9" tools/linux/mq-launch.sh
 ```
 
+To auto-login, set `CHARS` to one `server:character` per tag (`-` skips a
+tag). Each client gets `/login:server:character`, which MQ2AutoLogin looks
+up in `config/login.db`. Add characters there from the MacroQuest tray menu
+(AutoLogin profiles), or log in once by hand and AutoLogin saves the account.
+
+```sh
+TAGS="3 7 8 9" CHARS="erollisi:Main erollisi:Alt1 erollisi:Alt2 -" tools/linux/mq-launch.sh
+```
+
 - Use absolute paths.
 - Patch the game through Steam after each EverQuest update.
 - The eqlib offsets must match the client build.

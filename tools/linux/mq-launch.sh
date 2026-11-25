@@ -3,6 +3,8 @@
 # tag/workspace: switch to the tag, launch, wait for the window, repeat (tools/linux/README.md, "Running (multibox)").
 # Usage: tools/linux/mq-launch.sh
 #   TAGS            1-based tags, one client per entry (default: "3 7 8 9")
+#   CHARS           optional AutoLogin characters paired with TAGS, as server:character
+#                   ("-" = no auto-login), e.g. "erollisi:Tums erollisi:Dantea"
 #   PROTON          proton script (default: GE-Proton10-34 in compatibilitytools.d)
 #   EQ_DIR          EverQuest install (default: Steam's "Everquest F2P")
 #   MQ_DIR          directory holding MacroQuest.exe (default: build/linux-x64/bin/release)
@@ -13,6 +15,7 @@ set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 steam="${STEAM_ROOT:-$HOME/.steam/steam}"
 read -r -a tags <<<"${TAGS:-3 7 8 9}"
+read -r -a chars <<<"${CHARS:-}"
 proton="${PROTON:-$steam/compatibilitytools.d/GE-Proton10-34/proton}"
 eq_dir="${EQ_DIR:-$steam/steamapps/common/Everquest F2P}"
 mq_dir="${MQ_DIR:-$repo/build/linux-x64/bin/release}"
@@ -35,6 +38,12 @@ done
 (( ${#tags[@]} > 0 )) || die "TAGS is empty"
 for tag in "${tags[@]}"; do
     [[ "$tag" =~ ^[1-9]$ ]] || die "invalid tag '$tag' (expected 1-9)"
+done
+if (( ${#chars[@]} > 0 && ${#chars[@]} != ${#tags[@]} )); then
+    die "CHARS has ${#chars[@]} entries but TAGS has ${#tags[@]}"
+fi
+for char in "${chars[@]}"; do
+    [[ "$char" == - || "$char" =~ ^[^:]+:[^:]+$ ]] || die "invalid CHARS entry '$char' (expected server:character or -)"
 done
 
 # Managed EverQuest windows. Proton sets WM_CLASS to steam_app_<id> for every
@@ -61,8 +70,12 @@ for tag in "${tags[@]}"; do
     client=$((client + 1))
     # The WM's _NET_CURRENT_DESKTOP/_NET_WM_DESKTOP handlers take 0-based indexes.
     wmctrl -s "$((tag - 1))"
-    printf 'client %d: launching eqgame.exe patchme (tag %d)\n' "$client" "$tag"
-    (cd "$eq_dir" && exec "$proton" run "$eq_dir/eqgame.exe" patchme) >/dev/null 2>&1 &
+    # MQ2AutoLogin reads /login: and looks the character up in MacroQuest's login.db.
+    args=(patchme)
+    char="${chars[client - 1]:--}"
+    [[ "$char" == - ]] || args+=("/login:$char")
+    printf 'client %d: launching eqgame.exe %s (tag %d)\n' "$client" "${args[*]}" "$tag"
+    (cd "$eq_dir" && exec "$proton" run "$eq_dir/eqgame.exe" "${args[@]}") >/dev/null 2>&1 &
 
     win=""
     deadline=$((SECONDS + window_timeout))
