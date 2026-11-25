@@ -751,3 +751,23 @@
 - **Consequences:** Linux builds produce no minidumps; use Wine's own crash
   output (`PROTON_LOG=1`) instead.
 - **Revisit when:** vcpkg's crashpad port builds from a Linux host.
+
+## Q-014: Linux launch wrapper scope
+
+- **Resolved:** 2026-11-25
+- **Answer:** Ship a fork-only `tools/linux/mq-launch.sh` that starts
+  `MacroQuest.exe` and one `eqgame.exe patchme` per entry in `TAGS`
+  (default `3 7 8 9`), placing each client on its own tag.
+- **Rationale:** The user multiboxes 4 clients on dwm-titus and wants each on
+  a fixed tag. Doing that by hand on every launch is error-prone.
+- **Evidence:**
+  - Under Proton, every window in the prefix has WM_CLASS
+    `steam_app_205710`, so a class-only rule can't tell clients apart. The
+    script matches the `EverQuest` title and diffs the window list before and
+    after each launch.
+  - dwm-titus handles `_NET_CURRENT_DESKTOP` (`wmctrl -s`) and
+    `_NET_WM_DESKTOP` (`wmctrl -t`). Two clients landed on tags 3 and 7.
+- **Consequences:** The script needs `wmctrl` and an EWMH window manager.
+  It switches the visible tag during launch and ends on the first tag.
+- **Revisit when:** MacroQuest renames client windows before they map, or
+  launching needs per-account arguments.

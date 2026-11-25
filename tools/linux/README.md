@@ -185,6 +185,17 @@ sleep 15; "$proton" run "$eq/eqgame.exe" patchme &
 sleep 15; "$proton" run "$eq/eqgame.exe" patchme &
 ```
 
+`tools/linux/mq-launch.sh` does this for you. It starts `MacroQuest.exe`
+if it isn't running, then for each entry in `TAGS` (default `3 7 8 9`, one
+client per tag) it switches to the tag, launches a client, waits for its
+window and pins the window to the tag. It needs `wmctrl` and an EWMH window
+manager such as dwm-titus. Override `PROTON`, `EQ_DIR`, `MQ_DIR`,
+`LAUNCH_DELAY` (default 2s) or `WINDOW_TIMEOUT` as needed:
+
+```sh
+TAGS="3 7 8 9" tools/linux/mq-launch.sh
+```
+
 - Use absolute paths.
 - Patch the game through Steam after each EverQuest update.
 - The eqlib offsets must match the client build.

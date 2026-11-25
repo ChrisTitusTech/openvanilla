@@ -11,10 +11,6 @@ See [SPEC.md](SPEC.md#destination).
       WinToast notifications, AutoLogin, the PostOffice/multibox IPC,
       Crashpad, Lua and luarocks, and each bundled plugin. (The in-game
       overlay is already excluded; see **Overlay requirement**.)
-- [ ] **Linux launch wrapper scope** (`Q-014`) - The launch method is
-      settled (see **Multibox IPC across instances**). Should a fork-only
-      script start N clients and `MacroQuest.exe` with `proton run`, or is
-      documentation alone enough?
 - [ ] **Verification environment** (`Q-013`) - What Live accounts, hardware
       (Vulkan-capable GPU), and Linux distribution/display server are
       available for testing, and how many clients make up the multibox test?
@@ -39,6 +35,8 @@ None.
   sensitivity**).
 
 ## Completed
+
+- [x] [Linux launch wrapper scope](ANSWERS.md#q-014-linux-launch-wrapper-scope) (`Q-014`)
 
 - [x] [Current attachment architecture](ANSWERS.md#q-001-current-attachment-architecture)
       (`Q-001`) - Fully Windows-native: DLL injection with `CreateRemoteThread`,
