@@ -44,7 +44,7 @@
     <!-- Shared linker settings -->
     <Link>
       <AdditionalLibraryDirectories>$(MQBuildDirectory)bin\$(MQBinaryDirName);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>mq2main.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>MQ2Main.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup />

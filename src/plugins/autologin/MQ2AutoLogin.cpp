@@ -26,7 +26,7 @@
 
 #include <map>
 #include <TlHelp32.h>
-#pragma comment(lib, "Crypt32.lib")
+#pragma comment(lib, "crypt32.lib")
 
 #include <filesystem>
 

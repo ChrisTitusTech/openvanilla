@@ -30,7 +30,7 @@
 #include <iphlpapi.h>
 #include <optional>
 
-#pragma comment(lib, "Iphlpapi.lib")
+#pragma comment(lib, "iphlpapi.lib")
 
 // Some stubbing for leader work has been done if it is desirable to implement it later
 //	-- leader gets PAT from router

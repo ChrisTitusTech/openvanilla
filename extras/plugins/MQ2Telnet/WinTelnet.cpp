@@ -15,8 +15,8 @@
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
 
 #include <winsock2.h>
-#include "wintelnet.h"
-#include <Ws2tcpip.h>
+#include "WinTelnet.h"
+#include <WS2tcpip.h>
 
 CWinTelnet::CWinTelnet()
 {

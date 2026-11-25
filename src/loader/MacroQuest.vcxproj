@@ -61,8 +61,8 @@
     <Import Project="$([MSBuild]::GetDirectoryNameOfFileAbove($(MSBuildThisFileDirectory), src\Common.props))\src\Common.props" Condition=" '$([MSBuild]::GetDirectoryNameOfFileAbove($(MSBuildThisFileDirectory), src\Common.props))' != '' " />
   </ImportGroup>
   <PropertyGroup Label="UserMacros">
-    <LoaderDependenciesDebug>d3d11.lib;Setupapi.lib;imm32.lib;pe-parse.lib;vcpkg_crashpad_base.lib;vcpkg_crashpad_client_common.lib;vcpkg_crashpad_client.lib;vcpkg_crashpad_util.lib;Secur32.lib;libcurl-d.lib;cpr.lib;zlibd.lib;Ws2_32.lib;Wldap32.lib;version.lib;fmtd.lib;libprotobufd.lib</LoaderDependenciesDebug>
-    <LoaderDependenciesRelease>d3d11.lib;Setupapi.lib;imm32.lib;pe-parse.lib;vcpkg_crashpad_base.lib;vcpkg_crashpad_client_common.lib;vcpkg_crashpad_client.lib;vcpkg_crashpad_util.lib;Secur32.lib;libcurl.lib;cpr.lib;zlib.lib;Ws2_32.lib;Wldap32.lib;version.lib;fmt.lib;libprotobuf.lib</LoaderDependenciesRelease>
+    <LoaderDependenciesDebug>d3d11.lib;setupapi.lib;imm32.lib;pe-parse.lib;vcpkg_crashpad_base.lib;vcpkg_crashpad_client_common.lib;vcpkg_crashpad_client.lib;vcpkg_crashpad_util.lib;secur32.lib;libcurl-d.lib;cpr.lib;zlibd.lib;ws2_32.lib;wldap32.lib;version.lib;fmtd.lib;libprotobufd.lib</LoaderDependenciesDebug>
+    <LoaderDependenciesRelease>d3d11.lib;setupapi.lib;imm32.lib;pe-parse.lib;vcpkg_crashpad_base.lib;vcpkg_crashpad_client_common.lib;vcpkg_crashpad_client.lib;vcpkg_crashpad_util.lib;secur32.lib;libcurl.lib;cpr.lib;zlib.lib;ws2_32.lib;wldap32.lib;version.lib;fmt.lib;libprotobuf.lib</LoaderDependenciesRelease>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" />
