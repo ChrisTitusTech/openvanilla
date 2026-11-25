@@ -196,6 +196,16 @@
   not by removing code. Disabling the workflows is a one-time
   implementation step. Workflows that upstream adds later for non-Live
   clients may need disabling too.
+- **Applied:** On 2026-11-25, all nine non-Live workflows were disabled on
+  `ChrisTitusTech/openvanilla` with `gh workflow disable`:
+  - `build_beta_emu_rof2`, `build_release_emu_rof2`, and
+    `build_release_emu_tob`;
+  - `ci_emu_rof2` and `ci_emu_tob`;
+  - `ov_build_beta_emu_rof2`, `ov_build_release_emu_rof2`,
+    `ov_build_release_emu_tob`, and `ov_build_release_test`.
+
+  When running `gh` against the fork, pass `-R ChrisTitusTech/openvanilla`.
+  Otherwise it targets upstream.
 - **Revisit when:** The fork stops syncing from upstream.
 
 ## Q-006: Windows support retention
