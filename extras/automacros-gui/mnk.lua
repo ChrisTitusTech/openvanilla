@@ -13,7 +13,7 @@ local settings = {
     {'PullMaxPath','int',1000}, {'PullTimeout','int',15},
     {'PullMinHP','int',80}, {'PullMinEndurance','int',50},
     {'PullMinHealerMana','int',50}, {'PullName','string','NULL'},
-    {'MonkUseAbilities','int',1},
+    {'MonkUseAbilities','int',1}, {'MonkAutoFD','int',1}, {'MonkEmergencyFDHP','int',50},
 }
 local function read(expr) return mq.parse('${'..expr..'}') end
 local function num(expr) return tonumber(read(expr)) or 0 end
@@ -47,6 +47,11 @@ local function npc(id)
     local e=spawn(id)
     return num(e..'.ID')==id and read(e..'.Type')=='NPC' and yes(e..'.Targetable') and not yes(e..'.Dead')
 end
+-- Some damage traps are exposed by the client as targetable NPCs.
+local function trap(id)
+    return tostring(read(spawn(id)..'.CleanName') or ''):lower():find('%f[%a]trap%f[%A]')~=nil
+end
+local function feigning() return yes('Me.Feigning') or read('Me.State')=='FEIGN' end
 local function followName(r)
     local name=cfg(r,'FollowToonName') or ''
     if name=='' or name:lower()=='null' or name:lower()=='nullnullnullnullnull' then return nil end
@@ -92,7 +97,7 @@ end
 local function reset(r,s,message)
     stopNav(r,s);stopCombat(r,s)
     s.phase='idle';s.pullId=nil;s.pullName=nil;s.nextPull=now()+1000
-    s.action=nil;s.engageDeadline=nil;s.approachLimit=nil;s.navApproachRange=nil;s.waitMobId=nil;s.pausedAt=nil
+    s.action=nil;s.engageDeadline=nil;s.approachLimit=nil;s.navApproachRange=nil;s.waitMobId=nil;s.pausedAt=nil;s.feign=nil
     if message then status(r,s,message) end
 end
 local function invalidateCamp(r,s,message)
@@ -134,29 +139,74 @@ end
 local function returnHome(r,s,reason,waitMobId)
     stopNav(r,s);stopCombat(r,s)
     s.phase='returning';s.nextNav=0;s.waitMobId=waitMobId;s.returnDeadline=now()+120000
+    s.returnPos=position('Me');s.returnProgressAt=now()
     s.action=nil;s.engageDeadline=nil;s.approachLimit=nil;s.navApproachRange=nil
     status(r,s,'Returning to camp: '..reason)
 end
 
 local function hostiles()
-    local list={}
-    local slots=math.min(40,math.max(1,num('Me.XTargetSlots'),num('Me.XTarget')))
-    local seen={}
+    local list,hate={},{byId={},max=0}
+    local count=num('Me.XTarget')
+    local slots=math.min(40,math.max(1,num('Me.XTargetSlots'),count))
+    local seen,occupied={},0
     for i=1,slots do
         local e='Me.XTarget['..i..']'
         local id=num(e..'.ID')
-        -- Like bard/warrior, consider every live NPC in occupied XTarget
-        -- slots, not just Auto Hater roles or mobs with nonzero personal aggro.
-        if not seen[id] and npc(id) then
+        if id>0 then occupied=occupied+1 end
+        -- Sparse slots and non-Auto-Hater roles are valid encounter NPCs.
+        if not seen[id] and npc(id) and not trap(id) then
             seen[id]=true;list[#list+1]=id
+            local pct=num(e..'.PctAggro')
+            if pct>=0 and pct<=100 then hate.byId[id]=pct end
         end
+        if count>0 and occupied>=count then break end
     end
-    return list
+    return list,hate
 end
 local function assistTarget()
     local id=num('Me.GroupAssistTarget.ID')
     local hp=num(spawn(id)..'.PctHPs')
-    if npc(id) and hp>0 and hp<100 then return id end
+    if npc(id) and not trap(id) and hp>0 and hp<100 then return id end
+end
+local function aggroSnapshot(hate,assist)
+    local target,me=num('Target.ID'),num('Me.ID')
+    if target>0 and (hate.byId[target]~=nil or target==assist) then
+        local pct=num('Me.PctAggro')
+        if pct>=0 and pct<=100 then
+            hate.byId[target]=math.max(hate.byId[target] or 0,pct)
+        end
+        local victim=num('Me.TargetOfTarget.ID')
+        if victim>0 and me>0 then
+            -- The actual target of our current NPC is more direct than
+            -- a stale 100% aggro meter following a taunt or feign.
+            if victim==me then hate.byId[target]=100
+            elseif hate.byId[target]==100 then hate.byId[target]=99 end
+        end
+    end
+    for id,pct in pairs(hate.byId) do
+        hate.max=math.max(hate.max,pct)
+        if pct>=100 then hate.top=true end
+    end
+    return hate
+end
+local function groupTank()
+    local assigned=num('Group.MainTank.ID')
+    local me=num('Me.ID')
+    local fallback
+    for i=1,math.min(5,num('Group.Members')) do
+        local e='Group.Member['..i..']'
+        local id=num(e..'.ID')
+        if id>0 and id~=me and not yes(e..'.Offline') and not yes(e..'.OtherZone') and num(e..'.PctHPs')>0 then
+            local class=read(e..'.Class.ShortName')
+            local dist=tonumber(read(e..'.Distance')) or distance(position(spawn(id)),position('Me'))
+            if dist<=100 and (id==assigned or class=='WAR' or class=='PAL' or class=='SHD') then
+                local tank={id=id,fighting=yes(e..'.Aggressive') or yes(spawn(id)..'.Aggressive')}
+                if id==assigned then return tank end
+                fallback=fallback or tank
+            end
+        end
+    end
+    return fallback
 end
 local function groupReady(r)
     if num('Me.PctHPs')<cfg(r,'PullMinHP') then return false,'Waiting for monk health' end
@@ -208,6 +258,7 @@ local function candidateReason(r,s,id)
     if not id or id<=0 then return 'missing spawn' end
     local e=spawn(id)
     if num(e..'.ID')~=id or read(e..'.Type')~='NPC' then return 'not NPC' end
+    if trap(id) then return 'trap' end
     if not yes(e..'.Targetable') then return 'untargetable' end
     if yes(e..'.Dead') then return 'dead' end
     if num(e..'.Master.ID')>0 then return 'pet' end
@@ -309,7 +360,7 @@ local function requestTag(r,s,method,t)
     end
     if not yes('Me.Standing') then command(r,'/stand');status(r,s,'Standing to pull');return end
     if yes('Navigation.Active') or yes('Me.Moving') then status(r,s,'Waiting for movement to stop before tagging');return end
-    if num('Me.Casting.ID')>0 then status(r,s,'Waiting for current cast before tagging');return end
+    if s.abilityPending or num('Me.Casting.ID')>0 then status(r,s,'Waiting for current ability before tagging');return end
     if not yes(method.ready) then status(r,s,'Waiting for '..method.name..' readiness');return end
     if s.faceId~=s.pullId then command(r,'/face fast');s.faceId=s.pullId end
     local ping=math.max(0,num('EverQuest.Ping'))
@@ -344,7 +395,7 @@ local discFamilies={
     aura={"Master's Aura","Disciple's Aura"},
     recovery={"Breather","Rest","Reprieve","Respite"},
     combatRecovery={"Hiatus V","Convalesce","Night's Calming","Relax","Hiatus"},
-    wind={"Fourth Wind","Third Wind","Second Wind"},
+    wind={"Seventh Wind","Sixth Wind","Fifth Wind","Fourth Wind","Third Wind","Second Wind"},
     breaths={"Moment of Stillness","Breath of Stillness","Breath of Tranquility","Nine Breaths","Eight Breaths","Seven Breaths","Six Breaths","Five Breaths"},
     form={"Diametric Form","Reciprocal Form","Ecliptic Form","Composite Form","Dissident Form","Dichotomic Form"},
     drunken={"Drunken Monkey Style"},
@@ -368,9 +419,9 @@ local discFamilies={
     stance={"Heron Stance","Crane Stance"},
     balance={"Eagle's Symmetry","Tiger's Symmetry","Dragon's Poise","Eagle's Poise","Tiger's Poise","Dragon's Balance"},
 }
-local aaNames={"Purify Body","Zan Fi's Whistle","Two-Finger Wasp Touch","Five Point Palm",
+local aaNames={"Imitate Death","Purify Body","Zan Fi's Whistle","Two-Finger Wasp Touch","Five Point Palm",
     "Ton Po's Stance","Spire of the Sensei","Infusion of Thunder","Focused Destructive Force","Silent Strikes","Swift Tails' Chant"}
-local skillNames={"Mend","Flying Kick","Round Kick","Kick","Tiger Claw","Eagle Strike","Dragon Punch","Tail Rake","Intimidation"}
+local skillNames={"Feign Death","Mend","Flying Kick","Round Kick","Kick","Tiger Claw","Eagle Strike","Dragon Punch","Tail Rake","Intimidation"}
 local function present(value) return value and value~='' and value~='NULL' end
 local function baseName(name) return (name:gsub(' Rk%. I+$','')) end
 local function discoverAbilities(r,s)
@@ -455,7 +506,7 @@ end
 local function useAbility(r,s,a,options)
     if not a or s.abilityPending or not yes(a.ready) or now()<(s.abilityRetry[a.name] or 0) then return false end
     options=options or {}
-    if (a.cast or 0)>0 and yes('Me.Moving') then return false end
+    if (a.cast or 0)>0 and (yes('Me.Moving') or options.instant) then return false end
     if a.cost and a.cost>0 and num('Me.CurrentEndurance')<a.cost then return false end
     if options.slot and discActive() and not (options.defensive and read('Spell['..a.spell..'].StacksWithDiscs')=='TRUE') then return false end
     if options.buff and (buffActive(a.spell) or buffActive(a.trigger) or (present(a.spell) and read('Spell['..a.spell..'].Stacks')=='FALSE')) then return false end
@@ -467,19 +518,19 @@ local function useAbility(r,s,a,options)
     r:log('Monk ability request: '..a.name..' ('..a.kind..')')
     return true
 end
--- One nonblocking ability request at a time. No combat actions during
--- outbound/tag/return, no automated feign, forced movement or AE attacks.
-local function abilityTick(r,s,mode,hostile)
-    if cfg(r,'MonkUseAbilities')~=1 or cfg(r,'UseMelee')~=1 or not s.abilities or
-       s.abilityPending or num('Me.Casting.ID')>0 or yes('Navigation.Active') or
-       not yes('Me.Standing') or yes('Me.Invis') or read('Me.State')=='FEIGN' then return false end
+-- Recovery and defensives can fire during an emergency return, but
+-- only instant abilities are allowed while navigating.
+local function selfProtection(r,s,mode)
+    if cfg(r,'MonkUseAbilities')~=1 or not s.abilities or s.abilityPending or
+       num('Me.Casting.ID')>0 or not yes('Me.Standing') or feigning() or yes('Me.Stunned') then return false end
     local kit=s.abilities
-    local hp,endu=num('Me.PctHPs'),num('Me.PctEndurance')
-    local function d(key,options) return useAbility(r,s,kit.disc[key],options) end
-    local function aa(name,options) return useAbility(r,s,kit.aa[name],options) end
-    local function skill(name) return useAbility(r,s,kit.skill[name]) end
-    local slot={slot=true};local defensive={slot=true,defensive=true};local buff={buff=true}
-    if hp>0 and hp<=60 and skill('Mend') then return true end
+    local hp=num('Me.PctHPs')
+    local moving=mode=='pull'
+    local function use(a,options)
+        options=options or {};options.instant=moving
+        return useAbility(r,s,a,options)
+    end
+    if hp>0 and hp<=(moving and 75 or 70) and use(kit.skill.Mend) then return true end
     if kit.aa['Purify Body'] and yes(kit.aa['Purify Body'].ready) then
         local detrimental=num('Me.CountersDisease')+num('Me.CountersPoison')+num('Me.CountersCurse')+num('Me.CountersCorruption')>0
         if not detrimental then
@@ -487,8 +538,122 @@ local function abilityTick(r,s,mode,hostile)
                 if num('Me.'..effect..'.ID')>0 then detrimental=true;break end
             end
         end
-        if detrimental and aa('Purify Body') then return true end
+        if detrimental and use(kit.aa['Purify Body']) then return true end
     end
+    if mode=='pull' or mode=='combat' or mode=='recovery' then
+        if hp>0 and hp<=35 and use(kit.disc.death,{slot=true,defensive=true}) then return true end
+        if hp>0 and hp<=65 then
+            for _,key in ipairs({'earth','shade','dodge'}) do
+                if use(kit.disc[key],{slot=true,defensive=true}) then return true end
+            end
+        end
+    end
+    return false
+end
+-- An automatic feign is owned by the macro. Never stand a player who
+-- manually feigned or resume attacking before the hate has dropped.
+local function requestFeign(r,s,mode,reason)
+    if cfg(r,'MonkAutoFD')~=1 or not s.abilities or now()<(s.nextFeign or 0) or
+       feigning() or yes('Me.Stunned') or not yes('Me.Standing') then return false end
+    s.fdRetry=s.fdRetry or {}
+    local kit=s.abilities
+    local function ready(a)
+        return a and yes(a.ready) and now()>=(s.fdRetry[a.name] or 0)
+    end
+    local aa=kit.aa['Imitate Death']
+    local skill=kit.skill['Feign Death']
+    local a=ready(aa) and aa or (ready(skill) and skill)
+    if not a then
+        r:logAction('monk-fd-unavailable','Monk aggro dump unavailable: '..reason)
+        return false
+    end
+    if num('Me.Casting.ID')>0 then
+        -- Actual top hate or critical HP takes priority over a cast;
+        -- even a previously observed cast may still be in progress.
+        command(r,'/stopcast');s.abilityPending=nil
+        s.nextFeign=now()+250
+        return true
+    end
+    local wasInvis=yes('Me.Invis')
+    local ownedAttack,ownedStick=s.attackOwned,s.stickOwned
+    stopNav(r,s);stopCombat(r,s)
+    -- Native attack can still be on if the player initiated it manually.
+    if not ownedAttack and yes('Me.Combat') then command(r,'/squelch /attack off') end
+    if not ownedStick and yes('Stick.Active') then command(r,'/stick off') end
+    s.abilityPending=nil
+    command(r,a.line)
+    local t=now()
+    s.feign={mode=mode,stage='requested',name=a.name,deadline=t+math.max(750,(a.cast or 0)+500,3*num('EverQuest.Ping')),wasInvis=wasInvis}
+    status(r,s,'Aggro dump: '..a.name..' ('..reason..')')
+    r:log('Monk FD request: '..a.name..' mode='..mode..' hp='..num('Me.PctHPs')..' reason='..reason)
+    return true
+end
+local function finishFeign(r,s,p)
+    s.feign=nil;s.nextFeign=now()+1500;s.nextPull=now()+1500;s.pausedAt=nil
+    if p.mode=='pull' then
+        if s.pullId then s.rejected[s.pullId]=now()+30000 end
+        returnHome(r,s,'Recovering from emergency feign')
+    else
+        s.phase='idle';s.pullId=nil;s.pullName=nil;s.waitMobId=nil
+        status(r,s,'Aggro dumped; resuming camp combat')
+    end
+    r:log('Monk FD recovery complete: '..p.name..' mode='..p.mode)
+end
+local function handleFeign(r,s,hostile,hate)
+    local p=s.feign
+    if not p then return false end
+    local t=now()
+    if p.stage=='requested' then
+        if feigning() then
+            p.stage='down';p.downAt=t
+            status(r,s,'Feign confirmed; waiting for aggro to clear')
+            r:log('Monk FD confirmed: '..p.name)
+        elseif t>=p.deadline then
+            s.fdRetry[p.name]=t+5000;s.feign=nil;s.nextNav=0
+            r:log('Monk FD unconfirmed: '..p.name..'; will try alternate if ready')
+            if p.name=='Imitate Death' and not p.wasInvis and yes('Me.Invis') then command(r,'/makemevisible') end
+        end
+        return true
+    end
+    if p.stage=='down' then
+        if not feigning() then p.stage='standing';p.nextStand=0
+        else
+            local hp=num('Me.PctHPs')
+            local healthy=hp>=math.max(60,cfg(r,'MonkEmergencyFDHP')+10) or (p.mode=='camp' and #hostile==0 and hp>0)
+            if t-p.downAt<1000 or hate.top or hate.max>=80 or not healthy then
+                r:logAction('monk-fd-wait','Monk FD waiting: hp='..hp..' aggro='..hate.max..' hostile='..#hostile)
+                return true
+            end
+            command(r,'/stand');p.stage='standing';p.nextStand=t+1000
+            return true
+        end
+    end
+    if feigning() then
+        if t>=(p.nextStand or 0) then command(r,'/stand');p.nextStand=t+1000 end
+        return true
+    end
+    -- Imitate Death supplies its own temporary invisibility. Remove only
+    -- invisibility created by this automated escape, not a manual buff.
+    if p.name=='Imitate Death' and not p.wasInvis and yes('Me.Invis') then
+        if t>=(p.nextVisible or 0) then command(r,'/makemevisible');p.nextVisible=t+1000 end
+        return true
+    end
+    finishFeign(r,s,p)
+    return true
+end
+-- One nonblocking ability request at a time. Offensive abilities are
+-- restricted to confirmed camp fights, not the pulling state machine.
+local function abilityTick(r,s,mode,hostile)
+    if cfg(r,'MonkUseAbilities')~=1 or cfg(r,'UseMelee')~=1 or not s.abilities or
+       s.abilityPending or num('Me.Casting.ID')>0 or yes('Navigation.Active') or
+       not yes('Me.Standing') or yes('Me.Invis') or feigning() then return false end
+    if selfProtection(r,s,mode) then return true end
+    local kit=s.abilities
+    local hp,endu=num('Me.PctHPs'),num('Me.PctEndurance')
+    local function d(key,options) return useAbility(r,s,kit.disc[key],options) end
+    local function aa(name,options) return useAbility(r,s,kit.aa[name],options) end
+    local function skill(name) return useAbility(r,s,kit.skill[name]) end
+    local slot={slot=true};local buff={buff=true}
     if mode=='idle' then
         if endu<math.max(50,cfg(r,'PullMinEndurance')) and
            (d('combatRecovery',buff) or d('recovery',buff) or d('wind',buff) or d('breaths')) then return true end
@@ -496,14 +661,14 @@ local function abilityTick(r,s,mode,hostile)
         return false
     end
     if mode~='combat' then return false end
-    if hp>0 and hp<=30 and d('death',defensive) then return true end
-    if hp>0 and hp<=65 and (d('earth',defensive) or d('shade',defensive) or d('dodge',defensive)) then return true end
     if endu<=25 and (d('combatRecovery',buff) or d('wind',buff) or d('breaths') or aa("Swift Tails' Chant")) then return true end
     local e=spawn(s.combatId)
     local range=num('Target.MaxRangeTo')
     local dist=tonumber(read(e..'.Distance3D'))
     if range<=0 or not dist or dist>range or not yes(e..'.LineOfSight') then return false end
     local targetHP=num(e..'.PctHPs')
+    -- Shed hate before spending more endurance or starting damage burns.
+    if math.max(s.maxAggro or 0,num('Me.PctAggro'))>=80 and aa('Silent Strikes',buff) then return true end
     -- Count only live encounter NPCs physically inside the anchored camp.
     -- Extended targets still on the way or elsewhere in the zone are not adds.
     local burn=yes(e..'.Named')
@@ -531,7 +696,6 @@ local function abilityTick(r,s,mode,hostile)
         -- break mez or pull extra nearby mobs with Destructive Force.
         if kit.disc.speed and read('Me.ActiveDisc.Name')==kit.disc.speed.name and aa('Focused Destructive Force',buff) then return true end
     end
-    if num('Me.PctAggro')>=80 and aa('Silent Strikes',buff) then return true end
     if hp>65 and d('storm',slot) then return true end
     if d('synergy') or (targetHP>25 and (d('curse') or aa('Two-Finger Wasp Touch'))) or
        d('fists') or d('phantom') or d('fang') or d('precision') or d('shuriken') or
@@ -547,7 +711,7 @@ local function engageCombat(r,s,hostile,assist)
     if cfg(r,'UseMelee')~=1 or not s.camp or yes('Navigation.Active') then return end
     if not s.combatId and campDistance(s)>cfg(r,'AutoCampRadius') then return end
     local function valid(id)
-        if not npc(id) then return false end
+        if not npc(id) or trap(id) then return false end
         local e=spawn(id)
         local hp=num(e..'.PctHPs')
         local threshold=cfg(r,'AutoAssistAt')
@@ -695,7 +859,11 @@ function M.classmainloop(r)
         return
     end
     if cfg(r,'ReturnToCamp')~=1 and s.camp then invalidateCamp(r,s,'Camp disabled') end
-    if yes('Me.Invis') or read('Me.State')=='FEIGN' then
+    local hostile,hate=hostiles()
+    local assist=assistTarget()
+    hate=aggroSnapshot(hate,assist);s.maxAggro=hate.max
+    if handleFeign(r,s,hostile,hate) then return end
+    if yes('Me.Invis') or feigning() then
         stopNav(r,s);stopCombat(r,s)
         s.pausedAt=s.pausedAt or t
         status(r,s,'Paused: invisible or feigned (pull state retained)')
@@ -707,20 +875,65 @@ function M.classmainloop(r)
         for _,key in ipairs({'deadline','engageDeadline','returnDeadline','waitMobDeadline','waitMobGrace'}) do
             if s[key] then s[key]=s[key]+elapsed end
         end
-        s.pausedAt=nil;s.nextNav=0
+        s.pausedAt=nil;s.nextNav=0;s.returnProgressAt=t;s.returnPos=position('Me')
     end
     if followName(r) then
         if s.camp then invalidateCamp(r,s,'Following; camp disabled') end
-        if not yes('Me.Combat') and #hostiles()==0 and num('Spawn[pc '..followName(r)..'].ID')>0 then r:call('followtoon') end
+        if not yes('Me.Combat') and #hostile==0 and num('Spawn[pc '..followName(r)..'].ID')>0 then r:call('followtoon') end
         return
     end
-    local hostile=hostiles()
-    local assist=assistTarget()
     maintainCombat(r,s,hostile,assist)
     local engaged=#hostile>0 or read('Me.CombatState')=='COMBAT' or yes('Me.Combat')
     if not s.camp then
         status(r,s,'Set camp here first')
         return
+    end
+    local pullPhase=s.phase=='outbound' or s.phase=='awaitAggro' or s.phase=='returning'
+    local hp=num('Me.PctHPs')
+    local stuckReturn=false
+    if s.phase=='returning' then
+        local pos=position('Me')
+        if not s.returnPos or distance(pos,s.returnPos)>3 then s.returnPos=pos;s.returnProgressAt=t end
+        stuckReturn=s.navOwned and yes('Navigation.Active') and t-(s.returnProgressAt or t)>=3000
+        if stuckReturn then
+            r:logAction('monk-return-stuck','Monk return stalled: hp='..hp..' campdist='..string.format('%.0f',campDistance(s)))
+        end
+    end
+    if hp>0 and hp<=75 and (engaged or pullPhase) then
+        r:logAction('monk-survival','Monk survival: phase='..s.phase..' hp='..hp..' aggro='..hate.max..' hostiles='..#hostile)
+    end
+    local emergencyHP=cfg(r,'MonkEmergencyFDHP')
+    if stuckReturn and engaged then emergencyHP=math.max(emergencyHP,65) end
+    if (engaged or pullPhase) and hp>0 and hp<=emergencyHP and (pullPhase or hate.top or hp<=30) then
+        if requestFeign(r,s,pullPhase and 'pull' or 'camp',stuckReturn and 'stalled return under attack' or 'critical health') then return end
+    end
+    if pullPhase then
+        -- Self-only instant actions may protect a returning puller without
+        -- stopping its path. Routine aggro during a healthy pull is expected.
+        selfProtection(r,s,'pull')
+    elseif hate.top and (campDistance(s)<=cfg(r,'AutoCampRadius') or s.combatId) then
+        local tank=groupTank()
+        local threatInCamp=false
+        for id,pct in pairs(hate.byId) do
+            if pct>=100 and (id==s.combatId or distance(position(spawn(id)),s.camp)<=cfg(r,'AutoCampRadius')) then
+                threatInCamp=true;break
+            end
+        end
+        if tank and threatInCamp then
+            if (s.combatId or tank.fighting) and requestFeign(r,s,'camp','monk has top aggro') then return end
+            -- If the tank hasn't established hate yet, don't add DPS hate.
+            if not s.combatId then
+                selfProtection(r,s,'recovery')
+                status(r,s,'Waiting for tank to take aggro')
+                return
+            end
+            -- FD may be unavailable; stop offensive actions until the tank
+            -- takes over, rather than continuing to generate more hate.
+            stopCombat(r,s)
+            selfProtection(r,s,'recovery')
+            status(r,s,'Holding DPS while monk has aggro')
+            return
+        end
     end
     if cfg(r,'AutoPull')~=1 and (s.phase=='outbound' or s.phase=='awaitAggro') then
         returnHome(r,s,'Auto pull disabled')
@@ -738,6 +951,9 @@ function M.classmainloop(r)
             end
         elseif t>=(s.returnDeadline or math.huge) then
             invalidateCamp(r,s,'Return to camp timed out; set camp again')
+        elseif stuckReturn and t-(s.returnProgressAt or t)>=5000 and not yes('Me.Stunned') and num('Me.Rooted.ID')==0 then
+            stopNav(r,s);s.nextNav=0;s.returnProgressAt=t
+            status(r,s,'Replanning stalled return to camp')
         elseif t>=(s.nextNav or 0) and (not s.navOwned or (not yes('Navigation.Active') and t-(s.navStarted or 0)>1000)) then
             stopNav(r,s);s.nextNav=t+2000
             if not startNav(r,s,campCommand(s),8) then status(r,s,'Waiting for a navigable path back to camp') end

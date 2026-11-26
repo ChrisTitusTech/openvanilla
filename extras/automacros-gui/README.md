@@ -105,7 +105,7 @@ each script session or zone change. A loaded MQ2Nav zone mesh is required.
 The monk enumerates loaded NPCs through the native MQ Lua spawn API.
 Horizontal camp radius and vertical radius (default 90) are independent.
 Living, targetable non-pet NPCs are filtered for special service classes,
-encounter locks and the optional literal name substring. Unknown or
+encounter locks, trap NPCs and the optional literal name substring. Unknown or
 partial NPC HP does not disqualify a living pull candidate. Valid targets
 are ranked by actual MQ2Nav path length, subject to a maximum path
 distance (default 1000). The GUI and log report candidate counts and
@@ -127,6 +127,24 @@ AutoLua stop, it restores the plugin's original enabled state without
 saving changes to MQ2Melee's configuration. A manual feign or invisibility
 pauses navigation and retains the return state until the monk is standing
 and visible again.
+
+**Feign death to dump aggro** is enabled by default. Once camp combat is
+underway and a nearby group tank can take over, the monk dumps actual
+top hate, including hate on other extended targets. It prefers learned
+Imitate Death and falls back to the Feign Death skill. Attack and stick
+stop before the request; AutoLua confirms the actual feigned state and
+waits for hate and health to recover before standing, removing the AA's
+temporary invisibility if needed. The monk holds attack when initial
+pull hate has not yet transferred to the tank. Healthy pull aggro does
+not trigger a feign while traveling.
+
+On pulls and returns, instant Mend, Purify Body and usable self-only
+defensives may protect the monk without stopping navigation. Critical
+health (default 50%, configurable) triggers an emergency feign; a
+stalled return under attack can trigger one earlier at 65% HP. After
+recovery, the monk abandons that pull, temporarily skips the target and
+returns to the saved camp. Stalled navigation is replanned when the
+monk is not rooted or stunned.
 
 At camp, the monk scans all occupied extended-target slots for living
 NPCs. It prioritizes an eligible group assist target, otherwise the
@@ -152,8 +170,9 @@ valid target and range; readiness, health and endurance reserves are checked. Re
 confirmed from cooldown or cast state and failed requests back off.
 The log records the resolved ability list, unclassified learned
 disciplines, requests and activation results; the GUI displays the last
-confirmed ability. No automated feign, forced target movement, area
-damage, veteran AA or equipment clicky rotation is enabled.
+confirmed ability. Automatic FD is limited to aggro dumps and emergency
+survival. No forced target movement, area damage, veteran AA or
+equipment clicky rotation is enabled.
 
 The next pull waits for
 combat to finish and for
@@ -181,7 +200,7 @@ For an already-installed GUI/Selo overlay, apply only
 `test_monk.lua` as shown above. No rebuild or relog is required. The
 offline suite exercises the pull cycle, 3D camp coordinates, group
 readiness, native spawn enumeration, path ranking, AA activation and
-retry, rescan, early navigation arrival, feign pause/resume, plugin suspension/restoration, multi-target
+retry, rescan, trap rejection, early navigation arrival, aggro dump and emergency feign recovery, plugin suspension/restoration, multi-target
 camp combat, learned-rank selection, ability recovery, burn coordination, mob-arrival wait, GUI persistence, timeout, cancellation,
 and zone invalidation. Existing character INI settings are preserved
 when upgrading; the new path limit and timeout are initialized on first

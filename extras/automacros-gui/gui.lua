@@ -18,6 +18,8 @@ local classes = {
     mnk = {
         {'AutoPull', 'Auto pull', 'toggle'},
         {'MonkUseAbilities', 'Monk combat and recovery abilities', 'toggle'},
+        {'MonkAutoFD', 'Feign death to dump aggro', 'toggle'},
+        {'MonkEmergencyFDHP', 'Emergency feign HP (%)', 'number', 20, 70},
         {'PullRadius', 'Pull radius (units)', 'number', 50, 10000},
         {'PullZRadius', 'Vertical pull radius (units)', 'number', 10, 350},
         {'PullMaxPath', 'Maximum navigation path (units)', 'number', 50, 10000},
