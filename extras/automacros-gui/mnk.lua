@@ -686,7 +686,7 @@ local function abilityTick(r,s,mode,hostile)
     local e=spawn(s.combatId)
     local range=num('Target.MaxRangeTo')
     local dist=tonumber(read(e..'.Distance3D'))
-    if range<=0 or not dist or dist>range or not yes(e..'.LineOfSight') then return false end
+    if range<=0 or not dist or dist>range*0.95 or not yes(e..'.LineOfSight') then return false end
     local targetHP=num(e..'.PctHPs')
     -- Shed hate before spending more endurance or starting damage burns.
     if math.max(s.maxAggro or 0,num('Me.PctAggro'))>=80 and aa('Silent Strikes',buff) then return true end
@@ -771,7 +771,29 @@ local function engageCombat(r,s,hostile,assist)
     if not yes('Me.Standing') then command(r,'/stand');return true end
     local t=now()
     s.combatId=id
+    local maxRange=num('Target.MaxRangeTo')
+    local targetDistance=tonumber(read(spawn(id)..'.Distance3D'))
+    local inRange=maxRange>0 and targetDistance and targetDistance<=maxRange*0.95 and yes(spawn(id)..'.LineOfSight')
+    local function approach()
+        if not yes('Stick.Active') and yes('Plugin[MQ2MoveUtils].IsLoaded') and t>=(s.nextStick or 0) then
+            local range=maxRange*0.8
+            if range>0 then
+                command(r,string.format('/stick %.1f moveback loose uw',range>29 and 25 or range))
+                s.stickOwned=true;s.nextStick=t+500
+                return true
+            end
+        end
+        return false
+    end
     if not yes('Me.Combat') then
+        -- Start movement before attack when the tank has caught a mob
+        -- outside melee reach. Native attack otherwise immediately emits
+        -- several out-of-range swings on every engagement.
+        if not inRange then
+            approach()
+            r:logAction('monk-approach:'..id,'Monk combat closing to melee range id='..id..' distance='..tostring(targetDistance))
+            return true
+        end
         if t>=(s.nextAttack or 0) then
             command(r,'/squelch /attack on')
             s.attackOwned=true;s.nextAttack=t+500
@@ -779,14 +801,7 @@ local function engageCombat(r,s,hostile,assist)
         end
         return true
     end
-    if not yes('Stick.Active') and yes('Plugin[MQ2MoveUtils].IsLoaded') and t>=(s.nextStick or 0) then
-        local range=num('Target.MaxRangeTo')*0.8
-        if range>0 then
-            command(r,string.format('/stick %.1f moveback loose uw',range>29 and 25 or range))
-            s.stickOwned=true;s.nextStick=t+500
-            return true
-        end
-    end
+    if approach() then return true end
     abilityTick(r,s,'combat',hostile)
     return true
 end
@@ -950,7 +965,7 @@ function M.classmainloop(r)
             end
         end
         if tank and threatInCamp then
-            if (s.combatId or tank.fighting) and requestFeign(r,s,'camp','monk has top aggro') then return end
+            if (s.attackOwned or yes('Me.Combat') or tank.fighting) and requestFeign(r,s,'camp','monk has top aggro') then return end
             -- If the tank hasn't established hate yet, don't add DPS hate.
             if not s.combatId then
                 selfProtection(r,s,'recovery')

@@ -176,8 +176,8 @@ monk is not rooted or stunned.
 
 At camp, the monk scans all occupied extended-target slots for living
 NPCs. It prioritizes an eligible group assist target, otherwise the
-lowest-health eligible NPC, confirms the target, and controls basic attack
-and stick directly. Other mobs already in camp can be fought immediately,
+lowest-health eligible NPC, confirms the target, closes to melee range
+with stick when needed, and only then enables attack. Other mobs already in camp can be fought immediately,
 even while the pulled mob is still on its way. After a target dies, AutoLua
 releases its attack and stick before engaging the next NPC.
 
