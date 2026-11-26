@@ -31,7 +31,8 @@ a Windows game; this is not a native Linux port of the game or MacroQuest.
 | Windows SDK | xwin 0.10.0, MSVC CRT 14.44.17.14, Windows SDK 10.0.26100 |
 | Plugins | 14 built-in and 18 pinned external plugins |
 
-Two clients have been verified in-game concurrently at different resolutions.
+Two clients have been verified in-game concurrently at different resolutions,
+with all 25 enabled plugins loaded and DanNet peer connectivity confirmed.
 The launcher defaults to four workspaces, but four-client stability and runtime
 behavior of every external plugin have not been fully validated. Windows builds,
 EverQuest Test, emulator clients, Wayland-only window management, and alternate
@@ -343,6 +344,33 @@ the next. This resolves the login stalls caused by switching focus too early.
 Allow roughly a minute per client for startup; do not change focus during
 AutoLogin. If a profile is missing or the server is slow, the launcher times
 out and continues so you can finish that login manually.
+
+### DanNet communication
+
+MQ2DanNet is included in the external plugin build and enabled in the shipped
+configuration. It discovers peers directly; no EQBC server is needed. Start
+the clients normally, then use `/echo ${DanNet.Peers}` in the game to see
+connected characters. `/dnet interface` shows the discovered interfaces.
+The current GroupInfo plugin's default group buttons use DanNet.
+
+DanNet's Zyre/CZMQ transport uses UDP port `5670` for discovery and dynamic
+TCP ports `49152-65535` for peer connections. If discovery is blocked by a
+host firewall, allow these ports in the zone used by your game machines.
+For firewalld, the following example applies both permanent and runtime
+rules in one elevation. Substitute the appropriate active zone if different:
+
+```bash
+sudo bash -c 'zone=public
+firewall-cmd --permanent --zone="$zone" \
+  --add-port=5670/udp --add-port=49152-65535/tcp &&
+firewall-cmd --zone="$zone" \
+  --add-port=5670/udp --add-port=49152-65535/tcp'
+```
+
+On the tested Linux host, allowing these ports resolved failed discovery
+between two clients on the same machine. Other firewall rules were unchanged.
+See the [DanNet documentation](https://github.com/dannuic/MQ2Dan) for commands
+and configuration options.
 
 ### Save your launch configuration
 
