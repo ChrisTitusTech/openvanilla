@@ -303,6 +303,12 @@ return function(setup,mock,eq)
     tick(r,6000)
     eq(r.monk.phase,'idle','release lost incoming mob')
     assert(r.monk.rejected[110]>mock.time,'temporarily skip lost incoming mob')
+    local savedCandidates=scannable;scannable={103}
+    mob(103,'a goblin scout',195,200,5,true)
+    tick(r,2000)
+    eq(r.monk.phase,'idle','avoid another pull in the same recently lost mob cluster')
+    assert(r.monk.status:find('recently lost pull cluster',1,true),'explain temporary cluster hold')
+    scannable=savedCandidates;r.monk.lostPulls={}
 
     -- Throw Stone fallback and cancel during outbound navigation.
     value('Me.AltAbilityReady[Distant Strike]','FALSE')

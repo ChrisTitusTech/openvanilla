@@ -106,7 +106,7 @@ local function reset(r,s,message)
     if message then status(r,s,message) end
 end
 local function invalidateCamp(r,s,message)
-    reset(r,s,message);s.camp=nil;s.rejected={}
+    reset(r,s,message);s.camp=nil;s.rejected={};s.lostPulls={}
     if cfg(r,'ReturnToCamp')==1 then
         r:set({},'ReturnToCamp',0);r:set({},'changetoini',1)
     end
@@ -119,7 +119,7 @@ local function rememberCamp(r,s)
         return
     end
     reset(r,s)
-    p.zone=zone;s.camp=p;s.rejected={}
+    p.zone=zone;s.camp=p;s.rejected={};s.lostPulls={}
     if yes('AdvPath.Following') then command(r,'/afollow off') end
     r:set({},'FollowToonName','NULL')
     r:set({},'ChaseAssist',0)
@@ -128,7 +128,7 @@ end
 function M.applycampanchor(r,y,x,z,zone)
     local s=state(r)
     reset(r,s)
-    s.camp={x=x,y=y,z=z,zone=zone};s.rejected={}
+    s.camp={x=x,y=y,z=z,zone=zone};s.rejected={};s.lostPulls={}
     status(r,s,string.format('Camp set at %.3f, %.3f, %.3f',y,x,z))
 end
 local function campDistance(s) return distance(position('Me'),s.camp) end
@@ -403,9 +403,17 @@ local function selectTarget(r,s)
     local ids,radius=scanIds(r,s)
     local t=now();local rejected={};local samples={}
     local best,bestPath
+    s.lostPulls=s.lostPulls or {}
+    for id,entry in pairs(s.lostPulls) do if t>=entry.expires then s.lostPulls[id]=nil end end
     for _,id in ipairs(ids) do
         local reason=candidateReason(r,s,id)
         if not reason and (s.rejected[id] or 0)>t then reason='retry cooldown' end
+        if not reason then
+            local p=position(spawn(id))
+            for _,entry in pairs(s.lostPulls) do
+                if distance(p,entry.pos)<=60 then reason='recently lost pull cluster';break end
+            end
+        end
         local path
         if not reason then
             path=num('Navigation.PathLength[id '..id..']')
@@ -1133,7 +1141,7 @@ function M.classmainloop(r)
                 s.phase='waitingMob';s.waitMobDeadline=t+120000
                 -- Hate may temporarily disappear while an NPC paths around
                 -- geometry. Budget travel time before declaring it lost.
-                s.waitMobGrace=t+clamp(math.ceil((s.pathLength or 0)/15)*1000+8000,25000,45000)
+                s.waitMobGrace=t+clamp(math.ceil((s.pathLength or 0)/15)*1000+8000,40000,60000)
                 s.waitMobDistance=distance(position(spawn(waitId)),s.camp);s.waitMobProgressAt=t
                 status(r,s,'Back at camp; waiting for '..tostring(read(spawn(waitId)..'.CleanName')))
             else
@@ -1165,6 +1173,9 @@ function M.classmainloop(r)
             -- Avoid immediately pulling the same mob over and over when
             -- it loses hate or leashes before reaching camp.
             s.rejected[id]=t+15000
+            s.lostPulls=s.lostPulls or {}
+            local p=position(spawn(id))
+            if p then s.lostPulls[id]={pos=p,expires=t+30000} end
             r:log('Monk incoming mob lost aggro: ID '..id..'; retry after 15 seconds')
         end
         if engageCombat(r,s,hostile,assist) or not living or (not remote and (engaged or assist)) or t>=s.waitMobDeadline or lost then

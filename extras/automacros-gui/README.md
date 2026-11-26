@@ -242,8 +242,9 @@ three-second aggro grace period before a fallback approach. If a mob
 leashes or loses hate before reaching camp, it is skipped for 15 seconds
 instead of immediately repeating the same pull. A confirmed incoming NPC
 that disappears from extended targets gets a travel-time allowance of
-25–45 seconds; observed progress toward camp extends that wait. This avoids
-pulling extra mobs while the previous target is still pathing. AutoLua
+40–60 seconds; observed progress toward camp extends that wait. Nearby
+pull candidates are briefly deferred after an unresolved arrival so the
+next tag cannot re-aggro the same pack. AutoLua
 disables MQ2Melee throughout the entire monk session, including in camp,
 during combat, when pulling is off, and when zoning. On a graceful
 AutoLua stop, it restores the plugin's original enabled state without
