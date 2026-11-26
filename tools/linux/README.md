@@ -205,15 +205,22 @@ up in `config/login.db`. Add characters there from the MacroQuest tray menu
 TAGS="3 4 5 6" CHARS="erollisi:Main erollisi:Alt1 erollisi:Alt2 -" tools/linux/mq-launch.sh
 ```
 
-Before each launch the script writes the client's size to `eqclient.ini`:
+Each tag runs EverQuest from its own directory,
+`~/.local/share/openvanilla/eq-instances/tag<N>` (`EQ_INSTANCES` overrides
+the base). It holds the client's own `eqclient.ini` and `Logs/`; every other
+entry is a symlink to the install, refreshed on each launch. The first launch
+copies the install's `eqclient.ini`, after which each client keeps its own
+settings. Mount-namespace tricks (bwrap, overlays) cannot do this: Wine's
+shared wineserver opens files outside the client's namespace.
+
+Before each launch the script writes the client's size to its `eqclient.ini`:
 `WindowedWidth`/`WindowedHeight`, zero window offsets and windowed mode.
 EverQuest reads this file at startup, so each client opens at exactly the
-size of its tile. `GS_RES` sets the size, either one value for every client
+size of its tile. Other settings in the file are left alone. `GS_RES` sets the size, either one value for every client
 or one per `TAGS` entry. The default `auto` uses the monitor that shows the
 tag, minus any panel docked to its edges. dwm-titus gives each monitor its
 own tags, so on a 2560x1440 + 1920x1080 setup with a 30px bar, tag 3 gets
-2560x1410 and tags 4 to 6 get 1920x1050. The first run saves a backup as
-`eqclient.ini.mq-launch.bak`.
+2560x1410 and tags 4 to 6 get 1920x1050.
 
 ```sh
 GS_RES="2560x1410 1920x1050 1920x1050 1920x1050" tools/linux/mq-launch.sh

@@ -7,6 +7,9 @@
 #                   ("-" = no auto-login), e.g. "erollisi:Tums erollisi:Dantea"
 #   PROTON          proton script (default: GE-Proton10-34 in compatibilitytools.d)
 #   EQ_DIR          EverQuest install (default: Steam's "Everquest F2P")
+#   EQ_INSTANCES    per-tag client directories, one tag<N> each: symlinks to EQ_DIR plus
+#                   the client's own eqclient.ini and Logs/ (default:
+#                   ~/.local/share/openvanilla/eq-instances)
 #   MQ_DIR          directory holding MacroQuest.exe (default: build/linux-x64/bin/release)
 #   LAUNCH_DELAY    seconds between a client's window appearing and the next launch (default: 2)
 #   WINDOW_TIMEOUT  seconds to wait for each client window (default: 180)
@@ -24,6 +27,7 @@ read -r -a tags <<<"${TAGS:-3 4 5 6}"
 read -r -a chars <<<"${CHARS:-}"
 proton="${PROTON:-$steam/compatibilitytools.d/GE-Proton10-34/proton}"
 eq_dir="${EQ_DIR:-$steam/steamapps/common/Everquest F2P}"
+instances="${EQ_INSTANCES:-${XDG_DATA_HOME:-$HOME/.local/share}/openvanilla/eq-instances}"
 mq_dir="${MQ_DIR:-$repo/build/linux-x64/bin/release}"
 launch_delay="${LAUNCH_DELAY:-2}"
 window_timeout="${WINDOW_TIMEOUT:-180}"
@@ -84,14 +88,28 @@ playable_area() {
     printf '%dx%d\n' "$((mw - left - right))" "$((mh - top - bottom))"
 }
 
+# Per-tag client directory: EverQuest reads and writes eqclient.ini and Logs/ in
+# its working directory, so each client gets its own copies. Everything else is
+# a symlink to the shared install, refreshed on every launch (new patch files,
+# removed ones). The first run seeds eqclient.ini from the shared one.
+prepare_instance() {
+    local dir="$1"
+    mkdir -p "$dir/Logs" || return 1
+    find "$dir" -mindepth 1 -maxdepth 1 -xtype l -delete
+    find "$eq_dir" -mindepth 1 -maxdepth 1 ! -name eqclient.ini ! -name Logs -print0 \
+        | while IFS= read -r -d '' src; do
+            [[ -e "$dir/${src##*/}" || -L "$dir/${src##*/}" ]] || printf '%s\0' "$src"
+        done | xargs -0 -r ln -s -t "$dir" || return 1
+    [[ -f "$dir/eqclient.ini" ]] || cp -p "$eq_dir/eqclient.ini" "$dir/eqclient.ini" 2>/dev/null || true
+}
+
 # Size EverQuest's window to the tile/nested screen: windowed, no offset (the WM
-# or gamescope places it). eqclient.ini is shared by every client.
+# or gamescope places it). Only the video keys change; other settings stay.
 set_eq_video() {
-    local ini="$eq_dir/eqclient.ini" tmp
+    local ini="$1/eqclient.ini" tmp
     [[ -f "$ini" ]] || return 0
-    [[ -f "$ini.mq-launch.bak" ]] || cp -p "$ini" "$ini.mq-launch.bak"
     tmp="$(mktemp)"
-    awk -v w="$1" -v h="$2" '
+    awk -v w="$2" -v h="$3" '
         function want(sec, key) {
             if (sec == "defaults") return key == "windowedmodexoffset" ? "0" : key == "windowedmodeyoffset" ? "0" : key == "maximized" ? "0" : ""
             if (sec == "videomode") return key == "windowedwidth" ? w : key == "windowedheight" ? h : key == "fullscreen" ? "0" : ""
@@ -197,17 +215,18 @@ for tag in "${tags[@]}"; do
     fi
     gs_w="${res%x*}" gs_h="${res#*x}"
     printf 'client %d: resolution %s\n' "$client" "$res"
-    # eqclient.ini is shared; EQ reads it at startup, before its window appears.
-    set_eq_video "$gs_w" "$gs_h"
+    inst="$instances/tag$tag"
+    prepare_instance "$inst" || die "client $client: could not prepare $inst"
+    set_eq_video "$inst" "$gs_w" "$gs_h"
     if [[ "$use_gamescope" == 1 ]]; then
         # Fixed inner (-w/-h) and outer (-W/-H) size; dwm may resize the outer window,
         # gamescope scales, and EQ never sees a mode change or focus loss.
         # no_new_privs drops gamescope's file CAP_SYS_NICE: two gamescopes with
         # realtime Vulkan queues fault NVIDIA GPUs (Xid 51 BAD_TSG; ublue-os/bazzite#6089).
-        (cd "$eq_dir" && exec setpriv --no-new-privs gamescope -w "$gs_w" -h "$gs_h" -W "$gs_w" -H "$gs_h" "${gs_args[@]}" \
-            -- "$proton" run "$eq_dir/eqgame.exe" "${args[@]}") >/dev/null 2>&1 &
+        (cd "$inst" && exec setpriv --no-new-privs gamescope -w "$gs_w" -h "$gs_h" -W "$gs_w" -H "$gs_h" "${gs_args[@]}" \
+            -- "$proton" run "$inst/eqgame.exe" "${args[@]}") >/dev/null 2>&1 &
     else
-        (cd "$eq_dir" && exec "$proton" run "$eq_dir/eqgame.exe" "${args[@]}") >/dev/null 2>&1 &
+        (cd "$inst" && exec "$proton" run "$inst/eqgame.exe" "${args[@]}") >/dev/null 2>&1 &
     fi
     launcher_pid=$!
 
