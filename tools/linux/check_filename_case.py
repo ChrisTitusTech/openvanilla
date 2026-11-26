@@ -25,7 +25,14 @@ from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
-EXCLUDED_PREFIXES = ("contrib/vcpkg/",)
+# These vendored projects are not compiled by the Linux plugin targets. In
+# particular their old Windows zlib project is replaced by the vcpkg port.
+EXCLUDED_PREFIXES = (
+    "contrib/vcpkg/",
+    "plugins/MQ2EQBC/server/contrib/",
+    "plugins/MQ2Nav/dependencies/zone-utilities/dependencies/",
+    "plugins/MQ2Nav/dependencies/zone-utilities/imgui/",
+)
 SHIM_DIR = "tools/linux/case-shims"
 
 SOURCE_EXTS = {".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx", ".inl", ".ipp", ".rc", ".rc2"}

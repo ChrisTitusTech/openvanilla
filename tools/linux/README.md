@@ -159,14 +159,46 @@ are offered upstream; see `ANSWERS.md` Q-022.
 - **Upstream-owned files:** fixed in place. `test_linux_build_fixes.py` pins
   each fix, so a merge that reverts one fails the tests.
 - **`src/eqlib`:** fixes live in `patches/eqlib/`. After changing eqlib,
-  refresh the patch:
+  refresh the relevant patch (avoid combining changes already in other patches):
 
   ```sh
-  git -C src/eqlib diff > tools/linux/patches/eqlib/0001-clang-compat.patch
+  git -C src/eqlib diff -- include/eqlib/game/Containers.h > tools/linux/patches/eqlib/0002-hashlistmap-iterator.patch
   ```
 
 - **Namespace-scope trampolines:** use `DETOUR_TRAMPOLINE_FN`. Keep
   `DETOUR_TRAMPOLINE_DEF` for class scope only.
+
+### External plugins (Live x64)
+
+The additional plugins are pinned Git submodules under `plugins/`. The
+Linux build keeps upstream code at those revisions and applies the small
+compatibility patches in `patches/plugins/` before configuring. Do not copy
+DLLs from an older game build into the release directory.
+
+```sh
+git submodule update --init src/eqlib contrib/vcpkg
+git submodule update --init --recursive -- plugins
+tools/linux/build.sh
+tools/linux/build-plugins.sh
+```
+
+The last command regenerates the external `.vcxproj` conversions (including
+Nav's older bundled CMake projects), builds the following DLLs, and stages
+the shipped resource defaults without overwriting existing resources:
+
+- RedGuides: AASpend, AdvPath, AutoAccept, Cast, EQBC, Exchange, GroupInfo,
+  Melee, MoveUtils, PortalSetter, Relocate, Rez, Status and MQItemColor.
+- brainiac: Camera, EasyFind and Nav.
+- dannuic: MQ2Dan (the MQ2DanNet target).
+
+The Linux overlay ports for ZeroMQ, CZMQ and Zyre support the DanNet
+dependency chain. The build uses the existing pinned protobuf and spdlog
+versions rather than altering the core dependency baseline.
+
+The DLLs are written to `build/linux-x64/bin/release/plugins`. Optional
+helper executables (EQBCS, Nav's console tool and MeshGenerator) are not
+targets of `build-plugins.sh`. Plugin activation, saved settings and runtime
+testing are separate from compilation.
 
 ## Running (multibox)
 

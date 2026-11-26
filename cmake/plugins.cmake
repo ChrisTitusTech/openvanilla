@@ -1,6 +1,6 @@
 function(detect_custom_plugins OUT_PLUGIN_SUBDIRS PLUGINS_FILE)
     # Determine custom plugins: either from file or auto-detect
-    if(PLUGINS_FILE AND EXISTS ${PLUGINS_FILE})
+    if(PLUGINS_FILE AND EXISTS "${PLUGINS_FILE}")
         # Parse the custom plugins file to extract directory paths
         file(STRINGS "${PLUGINS_FILE}" PLUGIN_FILE_LINES)
         foreach(LINE ${PLUGIN_FILE_LINES})
@@ -57,8 +57,8 @@ function(build_custom_plugin_directories OUT_CONVERTED_DIRS PLUGIN_DIRS FORCE_VC
                     file(READ "${VCXPROJ_FILE}" VCXPROJ_CONTENT)
 
                     if(
-                    (CMAKE_GENERATOR_PLATFORM STREQUAL "x64" AND VCXPROJ_CONTENT MATCHES "ProjectConfiguration Include=\"[^\"]*\\|x64\"") OR
-                    (CMAKE_GENERATOR_PLATFORM STREQUAL "Win32" AND VCXPROJ_CONTENT MATCHES "ProjectConfiguration Include=\"[^\"]*\\|Win32\"")
+                    (MQ_PLATFORM STREQUAL "x64" AND VCXPROJ_CONTENT MATCHES "ProjectConfiguration Include=\"[^\"]*\\|x64\"") OR
+                    (MQ_PLATFORM STREQUAL "Win32" AND VCXPROJ_CONTENT MATCHES "ProjectConfiguration Include=\"[^\"]*\\|Win32\"")
                     )
                         list(APPEND COMPATIBLE_VCXPROJS "${VCXPROJ_FILE}")
                     else()

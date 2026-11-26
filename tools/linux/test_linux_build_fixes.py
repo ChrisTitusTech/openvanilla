@@ -114,6 +114,28 @@ class EqlibPatches(unittest.TestCase):
                                  f"the current eqlib:\n{forward.stderr}")
 
 
+class ExternalPluginPatches(unittest.TestCase):
+    def test_patches_apply_or_are_applied(self):
+        patches = sorted((REPO / "tools/linux/patches/plugins").glob("*/*.patch"))
+        checked = 0
+        for patch in patches:
+            plugin = REPO / "plugins" / patch.parent.name
+            if not (plugin / ".git").exists():
+                continue
+            checked += 1
+            with self.subTest(plugin=plugin.name, patch=patch.name):
+                command = ["git", "-C", str(plugin), "apply", "--check"]
+                forward = subprocess.run([*command, str(patch)], capture_output=True, text=True)
+                if forward.returncode == 0:
+                    continue
+                reverse = subprocess.run([*command, "--reverse", str(patch)],
+                                         capture_output=True, text=True)
+                self.assertEqual(reverse.returncode, 0,
+                                 f"{patch} neither applies nor is applied:\n{forward.stderr}")
+        if not checked:
+            self.skipTest("external plugin submodules not checked out")
+
+
 # batch-convert.ps1 also regenerates the eqlib submodule, which upstream eqlib owns.
 CONVERTER_SKIP = {"src/eqlib/eqlib.vcxproj"}
 

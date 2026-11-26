@@ -1,2 +1,5 @@
 README.md merge=ours
 
+# Unified diff context lines preserve upstream whitespace.
+tools/linux/**/*.patch -whitespace
+

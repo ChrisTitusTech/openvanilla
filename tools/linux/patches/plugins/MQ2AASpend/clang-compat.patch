@@ -1,0 +1,12 @@
+diff --git a/MQ2AASpend.cpp b/MQ2AASpend.cpp
+index 2bc9552..e453d58 100644
+--- a/MQ2AASpend.cpp
++++ b/MQ2AASpend.cpp
+@@ -11,6 +11,7 @@
+ // v2.6 - Sic    01-04-2020 - Updated Bonus to reflect AutoGrant as of 12/19/2019 gives autogrant up to and including TBM, xpac #22
+ 
+ #include <mq/Plugin.h>
++#include <array>
+ 
+ PreSetup("MQ2AASpend");
+ PLUGIN_VERSION(2.6);

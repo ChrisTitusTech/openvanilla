@@ -115,6 +115,11 @@ endfunction()
 
 # Ninja ignores VS_SETTINGS/VS_TOOL_OVERRIDE; translate the ones MacroQuest uses.
 function(mq_linux_apply_vs_settings)
+    # Nav's source includes common/proto/*.pb.h. Generated protobuf headers
+    # live in the build tree, so publish its plugin-level include directory.
+    if(TARGET MQ2Nav_Common-proto)
+        target_include_directories(MQ2Nav_Common-proto PUBLIC "${CMAKE_BINARY_DIR}/plugins/MQ2Nav")
+    endif()
     _mq_linux_collect_targets("${CMAKE_SOURCE_DIR}" targets)
     foreach(target IN LISTS targets)
         get_target_property(type ${target} TYPE)

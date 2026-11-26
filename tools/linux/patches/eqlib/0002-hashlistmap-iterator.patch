@@ -1,0 +1,13 @@
+diff --git a/include/eqlib/game/Containers.h b/include/eqlib/game/Containers.h
+index a3614bb..e34f35d 100644
+--- a/include/eqlib/game/Containers.h
++++ b/include/eqlib/game/Containers.h
+@@ -1812,7 +1812,7 @@ public:
+ 			: m_node(node) {}
+ 
+ 		Iterator& operator++() {
+-			m_node = m_node->pNext;
++			m_node = m_node->next();
+ 			return *this;
+ 		}
+ 

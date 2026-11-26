@@ -1,0 +1,13 @@
+diff --git a/MQ2DanNet/MQ2DanNet.cpp b/MQ2DanNet/MQ2DanNet.cpp
+index 5350911..579e3d8 100755
+--- a/MQ2DanNet/MQ2DanNet.cpp
++++ b/MQ2DanNet/MQ2DanNet.cpp
+@@ -168,7 +168,7 @@ public:
+         std::map<unsigned int, Query> updated_values;
+         std::map<unsigned int, std::string> stale_observers; // observer key, query
+ 
+-        _observer_map.foreach ([this, &updated_values, &stale_observers](const std::pair<unsigned int, Query>& observer) -> void {
++        _observer_map.foreach ([this, &updated_values, &stale_observers, &args...](const std::pair<unsigned int, Query>& observer) -> void {
+             const auto tick = MQGetTickCount64();
+             const std::string group = observer_group(observer.first);
+ 

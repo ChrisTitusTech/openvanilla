@@ -1,0 +1,89 @@
+diff --git a/cli/MQ2Nav_ConsoleTool.vcxproj b/cli/MQ2Nav_ConsoleTool.vcxproj
+index 9476e1c..acf5d7d 100644
+--- a/cli/MQ2Nav_ConsoleTool.vcxproj
++++ b/cli/MQ2Nav_ConsoleTool.vcxproj
+@@ -70,7 +70,7 @@
+     <Link>
+       <SubSystem>Console</SubSystem>
+       <GenerateDebugInformation>true</GenerateDebugInformation>
+-      <AdditionalDependencies>fmtd.lib;zlibd.lib;imm32.lib;setupapi.lib;openGL32.lib;glu32.lib;winmm.lib;version.lib;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies>fmtd.lib;zlibd.lib;imm32.lib;setupapi.lib;opengl32.lib;glu32.lib;winmm.lib;version.lib;%(AdditionalDependencies)</AdditionalDependencies>
+       <AdditionalLibraryDirectories>$(ProjectDir)..\dependencies\sdl\lib;$(ProjectDir)..\dependencies\zlib\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+       <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
+     </Link>
+@@ -91,7 +91,7 @@
+       <GenerateDebugInformation>true</GenerateDebugInformation>
+       <EnableCOMDATFolding>true</EnableCOMDATFolding>
+       <OptimizeReferences>true</OptimizeReferences>
+-      <AdditionalDependencies>fmt.lib;zlib.lib;imm32.lib;setupapi.lib;openGL32.lib;glu32.lib;winmm.lib;version.lib;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies>fmt.lib;zlib.lib;imm32.lib;setupapi.lib;opengl32.lib;glu32.lib;winmm.lib;version.lib;%(AdditionalDependencies)</AdditionalDependencies>
+       <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
+     </Link>
+   </ItemDefinitionGroup>
+diff --git a/meshgen/EQConfig.cpp b/meshgen/EQConfig.cpp
+index 009696d..c91d460 100644
+--- a/meshgen/EQConfig.cpp
++++ b/meshgen/EQConfig.cpp
+@@ -12,7 +12,7 @@
+ #include <string>
+ #include <sstream>
+ 
+-#pragma comment(lib, "Shlwapi.lib")
++#pragma comment(lib, "shlwapi.lib")
+ 
+ EQConfig::EQConfig()
+ {
+diff --git a/meshgen/MeshGenerator.vcxproj b/meshgen/MeshGenerator.vcxproj
+index 769d7ac..f231b70 100644
+--- a/meshgen/MeshGenerator.vcxproj
++++ b/meshgen/MeshGenerator.vcxproj
+@@ -20,7 +20,7 @@
+     <ClCompile Include="imgui\imgui_impl_opengl2.cpp" />
+     <ClCompile Include="imgui\imgui_impl_sdl2.cpp" />
+     <ClCompile Include="InputGeom.cpp" />
+-    <ClCompile Include="Main.cpp" />
++    <ClCompile Include="main.cpp" />
+     <ClCompile Include="MapGeometryLoader.cpp" />
+     <ClCompile Include="NavMeshInfoTool.cpp" />
+     <ClCompile Include="NavMeshTool.cpp" />
+@@ -143,7 +143,7 @@
+     <Link>
+       <SubSystem>Windows</SubSystem>
+       <GenerateDebugInformation>true</GenerateDebugInformation>
+-      <AdditionalDependencies>fmtd.lib;zlibd.lib;SDL2-staticd.lib;SDL2maind.lib;imm32.lib;setupapi.lib;openGL32.lib;glu32.lib;winmm.lib;version.lib;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies>fmtd.lib;zlibd.lib;SDL2-staticd.lib;SDL2maind.lib;imm32.lib;setupapi.lib;opengl32.lib;glu32.lib;winmm.lib;version.lib;%(AdditionalDependencies)</AdditionalDependencies>
+       <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
+     </Link>
+     <Manifest>
+@@ -170,7 +170,7 @@
+       <GenerateDebugInformation>true</GenerateDebugInformation>
+       <EnableCOMDATFolding>true</EnableCOMDATFolding>
+       <OptimizeReferences>true</OptimizeReferences>
+-      <AdditionalDependencies>fmt.lib;zlib.lib;SDL2-static.lib;SDL2main.lib;imm32.lib;setupapi.lib;openGL32.lib;glu32.lib;winmm.lib;version.lib;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies>fmt.lib;zlib.lib;SDL2-static.lib;SDL2main.lib;imm32.lib;setupapi.lib;opengl32.lib;glu32.lib;winmm.lib;version.lib;%(AdditionalDependencies)</AdditionalDependencies>
+       <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
+     </Link>
+     <Manifest>
+diff --git a/meshgen/MeshGenerator.vcxproj.filters b/meshgen/MeshGenerator.vcxproj.filters
+index 9d9e119..72cbb25 100644
+--- a/meshgen/MeshGenerator.vcxproj.filters
++++ b/meshgen/MeshGenerator.vcxproj.filters
+@@ -44,7 +44,7 @@
+     <ClCompile Include="Application.cpp">
+       <Filter>Source Files</Filter>
+     </ClCompile>
+-    <ClCompile Include="Main.cpp">
++    <ClCompile Include="main.cpp">
+       <Filter>Source Files</Filter>
+     </ClCompile>
+     <ClCompile Include="ZonePicker.cpp">
+diff --git a/meshgen/targetver.h b/meshgen/targetver.h
+index 586ce5e..cb49750 100644
+--- a/meshgen/targetver.h
++++ b/meshgen/targetver.h
+@@ -2,4 +2,4 @@
+ 
+ // _WIN32_WINNT is defined in Common.props
+ 
+-#include <SDKDDKVer.h>
++#include <sdkddkver.h>

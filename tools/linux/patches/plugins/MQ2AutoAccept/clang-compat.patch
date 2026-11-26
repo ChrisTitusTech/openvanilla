@@ -1,0 +1,13 @@
+diff --git a/MQ2AutoAccept.cpp b/MQ2AutoAccept.cpp
+index 1699c6b..4e4d06f 100644
+--- a/MQ2AutoAccept.cpp
++++ b/MQ2AutoAccept.cpp
+@@ -1316,7 +1316,7 @@ PLUGIN_API void OnPulse()
+ 					{
+ 						if (ci_find_substr(windowText, vRef) != -1)
+ 						{
+-							WriteChatf(PLUGINMSG "\agAccepting anchor portal to \ax\at%s\ax", vRef);
++							WriteChatf(PLUGINMSG "\agAccepting anchor portal to \ax\at%s\ax", vRef.c_str());
+ 							WinClick(FindMQ2Window("ConfirmationDialogBox"), "Yes_Button", "leftmouseup", 1);
+ 							return;
+ 						}

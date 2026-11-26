@@ -287,6 +287,10 @@ function Get-VcpkgLibraryPatterns {
         'crashpad'  = @('^crashpad.*\.lib$', '^vcpkg_crashpad_.*\.lib$', '^base\.lib$', '^common\.lib$', '^client\.lib$', '^util\.lib$')
         'dxsdk-d3dx' = @('^d3dx9.*\.lib$', '^d3dx10.*\.lib$', '^d3dx11.*\.lib$')
         'pe-parse'  = @('^pe-parse\.lib$')
+        'zeromq'    = @('^libzmq.*\.lib$')
+        'czmq'      = @('^libczmq.*\.lib$')
+        'zyre'      = @('^libzyre.*\.lib$')
+        'sdl2'      = @('^sdl2-staticd?\.lib$', '^sdl2maind?\.lib$')
     }
 
     if ($IncludeAllKnown) {

@@ -729,6 +729,8 @@ if ($vcpkgDependencies.Count -gt 0) {
             "nlohmann-json"      { "nlohmann_json" }
             "zlib"               { "ZLIB" }
             "curl"               { "CURL" }
+            "rapidjson"          { "RapidJSON" }
+            "sdl2"               { "SDL2" }
             default              { $dep }
         }
 
@@ -993,7 +995,7 @@ if ($vcpkgDependencies.Count -gt 0) {
             "sleepy-discord"     { "sleepy-discord" }
             "curl"               { "CURL::libcurl" }
             "rapidjson"          { "rapidjson" }
-            "sdl2"               { "SDL2::SDL2main" }
+            "sdl2"               { "SDL2::SDL2main SDL2::SDL2" }
             "directxtk"          { "Microsoft::DirectXTK" }
             "entt"               { "EnTT::EnTT" }
             "taskflow"           { "Taskflow::Taskflow" }

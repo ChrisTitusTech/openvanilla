@@ -1,0 +1,104 @@
+diff --git a/common/NavMesh.cpp b/common/NavMesh.cpp
+index 75f8947..0f253cf 100644
+--- a/common/NavMesh.cpp
++++ b/common/NavMesh.cpp
+@@ -1142,7 +1142,7 @@ bool NavMesh::ExportJson(const std::string& filename, PersistedDataFields fields
+ 	//options.always_print_primitive_fields = true;
+ 
+ 	std::string jsonString;
+-	absl::Status status =
++	auto status =
+ 		google::protobuf::util::MessageToJsonString(proto, &jsonString, options);
+ 	if (status.ok())
+ 	{
+@@ -1181,7 +1181,7 @@ bool NavMesh::ImportJson(const std::string& filename, PersistedDataFields fields
+ 	options.ignore_unknown_fields = true;
+ 
+ 	nav::NavMeshFile proto;
+-	absl::Status status =
++	auto status =
+ 		google::protobuf::util::JsonStringToMessage(contents,
+ 			&proto, options);
+ 	if (!status.ok())
+diff --git a/plugin/EmbedResources.rc b/plugin/EmbedResources.rc
+index cb7bfa8..54c34c7 100644
+--- a/plugin/EmbedResources.rc
++++ b/plugin/EmbedResources.rc
+@@ -1,3 +1,3 @@
+ #include "EmbedResources.h"
+ 
+-IDR_VOLUMELINES_FX      TEXT                    "..\\resources\\VolumeLines.fx"
++IDR_VOLUMELINES_FX      TEXT                    "resources/VolumeLines.fx"
+diff --git a/plugin/MQ2Navigation.cpp b/plugin/MQ2Navigation.cpp
+index b0b5b10..4fa586c 100644
+--- a/plugin/MQ2Navigation.cpp
++++ b/plugin/MQ2Navigation.cpp
+@@ -253,13 +253,11 @@ spdlog::level::level_enum ExtractLogLevel(std::string_view input,
+ 	auto end = input.find_first_of(" \t\r\n", pos);
+ 	std::string_view fragment = input.substr(pos, (end == std::string_view::npos) ? end : end - pos);
+ 
+-	int level = 0;
+-	for (const auto& level_str : spdlog::level::level_string_views)
++	for (int level = 0; level < spdlog::level::n_levels; ++level)
+ 	{
+-		if (level_str == fragment)
++		const auto level_str = spdlog::level::to_string_view(static_cast<spdlog::level::level_enum>(level));
++		if (std::string_view(level_str.data(), level_str.size()) == fragment)
+ 			return static_cast<spdlog::level::level_enum>(level);
+-
+-		level++;
+ 	}
+ 
+ 	return defaultLevel;
+@@ -1833,7 +1831,7 @@ void RenderNavigationOptions(NavigationOptions& opts)
+ 	ImGui::Combo("Log level", (int*)& opts.logLevel,
+ 		[](void* data, int idx, const char** out_text) -> bool
+ 	{
+-		*out_text = spdlog::level::level_string_views[idx].data();
++		*out_text = spdlog::level::to_string_view(static_cast<spdlog::level::level_enum>(idx)).data();
+ 		return true;
+ 	}, nullptr, 7);
+ 
+diff --git a/plugin/UiController.cpp b/plugin/UiController.cpp
+index 1d28ba5..1660346 100644
+--- a/plugin/UiController.cpp
++++ b/plugin/UiController.cpp
+@@ -447,7 +447,7 @@ void UiController::PerformUpdateTab(TabPage page)
+ 
+ 			ImGui::Separator();
+ 			ImGui::LabelText("Ending Door", "%s", g_mq2Nav->m_pEndingSwitch ? g_mq2Nav->m_pEndingSwitch->Name : "<none>");
+-			ImGui::LabelText("Ending Item", "%s", g_mq2Nav->m_endingGround ? g_mq2Nav->m_endingGround.Name() : "<none>");
++			ImGui::LabelText("Ending Item", "%s", g_mq2Nav->m_endingGround ? g_mq2Nav->m_endingGround.Name().c_str() : "<none>");
+ 			ImGui::LabelText("Is Active", "%s", g_mq2Nav->m_isActive ? "true" : "false");
+ 			ImGui::LabelText("Current Waypoint", "(%.2f, %.2f, %.2f)",
+ 				g_mq2Nav->m_currentWaypoint.x, g_mq2Nav->m_currentWaypoint.y, g_mq2Nav->m_currentWaypoint.z);
+diff --git a/plugin/Versioning.ps1 b/plugin/Versioning.ps1
+index 1a87e8f..f7526d0 100644
+--- a/plugin/Versioning.ps1
++++ b/plugin/Versioning.ps1
+@@ -1,13 +1,17 @@
+-$CPPFile = Get-ChildItem -Recurse PluginMain.cpp
+-$ResFile = Get-ChildItem -Recurse Version.rc
++$ErrorActionPreference = "Stop"
++$CPPFile = Join-Path $PSScriptRoot PluginMain.cpp
++$ResFile = Join-Path $PSScriptRoot Version.rc
+ $VersionMatch = Select-String -Path $CPPFile -Pattern 'MQ2NAV_PLUGIN_VERSION\s\"(.*)\"'
+ $Version = $VersionMatch.Matches.Groups[1].Value
+ If ($Version) {
+     $VersionCommas = $Version -replace '\.', ','
+-    (Get-Content $ResFile) | ForEach-Object {
+-        $_ -replace 'FILEVERSION (.*)', "FILEVERSION $VersionCommas" `
+-           -replace 'PRODUCTVERSION (.*)', "PRODUCTVERSION $VersionCommas" `
+-           -replace 'VALUE "FileVersion", (.*)', "VALUE `"FileVersion`", `"$Version`"" `
+-           -replace 'VALUE "ProductVersion", (.*)', "VALUE `"ProductVersion`", `"$Version`""
+-    } | Set-Content $ResFile
++    $Original = Get-Content -Raw $ResFile
++    $Updated = $Original `
++        -replace 'FILEVERSION (.*)', "FILEVERSION $VersionCommas" `
++        -replace 'PRODUCTVERSION (.*)', "PRODUCTVERSION $VersionCommas" `
++        -replace 'VALUE "FileVersion", (.*)', "VALUE `"FileVersion`", `"$Version`"" `
++        -replace 'VALUE "ProductVersion", (.*)', "VALUE `"ProductVersion`", `"$Version`""
++    if ($Updated -cne $Original) {
++        Set-Content -LiteralPath $ResFile -Value $Updated -NoNewline
++    }
+ }

@@ -12,3 +12,57 @@
 	path = contrib/luarocks
 	url = https://github.com/macroquest/luarocks.git
 	shallow = true
+[submodule "plugins/MQ2AASpend"]
+	path = plugins/MQ2AASpend
+	url = https://github.com/RedGuides/MQ2AASpend.git
+[submodule "plugins/MQ2AdvPath"]
+	path = plugins/MQ2AdvPath
+	url = https://github.com/RedGuides/MQ2AdvPath.git
+[submodule "plugins/MQ2AutoAccept"]
+	path = plugins/MQ2AutoAccept
+	url = https://github.com/RedGuides/MQ2AutoAccept.git
+[submodule "plugins/MQ2Cast"]
+	path = plugins/MQ2Cast
+	url = https://github.com/RedGuides/MQ2Cast.git
+[submodule "plugins/MQ2EQBC"]
+	path = plugins/MQ2EQBC
+	url = https://github.com/RedGuides/MQ2EQBC.git
+[submodule "plugins/MQ2Exchange"]
+	path = plugins/MQ2Exchange
+	url = https://github.com/RedGuides/MQ2Exchange.git
+[submodule "plugins/MQ2GroupInfo"]
+	path = plugins/MQ2GroupInfo
+	url = https://github.com/RedGuides/MQ2GroupInfo.git
+[submodule "plugins/MQ2Melee"]
+	path = plugins/MQ2Melee
+	url = https://github.com/RedGuides/MQ2Melee.git
+[submodule "plugins/MQ2MoveUtils"]
+	path = plugins/MQ2MoveUtils
+	url = https://github.com/RedGuides/MQ2MoveUtils.git
+[submodule "plugins/MQ2PortalSetter"]
+	path = plugins/MQ2PortalSetter
+	url = https://github.com/RedGuides/MQ2PortalSetter.git
+[submodule "plugins/MQ2Relocate"]
+	path = plugins/MQ2Relocate
+	url = https://github.com/RedGuides/MQ2Relocate.git
+[submodule "plugins/MQ2Rez"]
+	path = plugins/MQ2Rez
+	url = https://github.com/RedGuides/MQ2Rez.git
+[submodule "plugins/MQ2Status"]
+	path = plugins/MQ2Status
+	url = https://github.com/RedGuides/MQ2Status.git
+[submodule "plugins/MQItemColor"]
+	path = plugins/MQItemColor
+	url = https://github.com/RedGuides/MQItemColor.git
+[submodule "plugins/MQ2Camera"]
+	path = plugins/MQ2Camera
+	url = https://github.com/brainiac/MQ2Camera.git
+[submodule "plugins/MQ2EasyFind"]
+	path = plugins/MQ2EasyFind
+	url = https://github.com/brainiac/MQ2EasyFind.git
+[submodule "plugins/MQ2Nav"]
+	path = plugins/MQ2Nav
+	url = https://github.com/brainiac/MQ2Nav.git
+[submodule "plugins/MQ2Dan"]
+	path = plugins/MQ2Dan
+	url = https://github.com/dannuic/MQ2Dan.git
