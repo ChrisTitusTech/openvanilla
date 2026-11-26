@@ -1111,9 +1111,9 @@ function M.classmainloop(r)
     -- only while no encounter is active. The ordinary crowded-approach,
     -- health, resource and multi-add safeguards still apply to the retry.
     if s.pullFadeAt and (s.phase=='awaitAggro' or s.phase=='returning' or s.phase=='waitingMob') then
-        if (s.pullFadeEnded or t-s.pullFadeAt>=5000) and (#hostile>0 or assist) then s.pullFadeAt=nil;s.pullFadeEnded=nil
+        if (s.pullFadeEnded or t-s.pullFadeAt>=12000) and (#hostile>0 or assist) then s.pullFadeAt=nil;s.pullFadeEnded=nil
         elseif cfg(r,'AutoPull')==1 and (s.pullFadeRetries or 0)<1 and eligible(r,s,s.pullId) and
-            not engaged and not assist and (s.pullFadeEnded or t-s.pullFadeAt>=5000) then
+            not engaged and not assist and (s.pullFadeEnded or t-s.pullFadeAt>=12000) then
             local ready=groupReady(r)
             local method=pullMethod()
             if ready and method and (method.name=='Distant Strike' or canTag(s.pullId,method)) then
@@ -1130,6 +1130,10 @@ function M.classmainloop(r)
                 status(r,s,'Chokidai Fade cleared; retagging '..s.pullName)
                 return
             end
+        end
+        if s.pullFadeAt and s.phase=='awaitAggro' and not s.pullFadeEnded and t-s.pullFadeAt<12000 then
+            returnHome(r,s,'Chokidai Fade; waiting for effect to clear',s.pullId)
+            return
         end
     end
     local pullPhase=s.phase=='outbound' or s.phase=='awaitAggro' or s.phase=='returning'
