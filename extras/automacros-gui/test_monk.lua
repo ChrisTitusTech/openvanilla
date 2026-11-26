@@ -310,6 +310,26 @@ return function(setup,mock,eq)
     assert(r.monk.status:find('recently lost pull cluster',1,true),'explain temporary cluster hold')
     scannable=savedCandidates;r.monk.lostPulls={}
 
+    -- The actual Chokidai Fade chat pair is an explicit loss of hate. A
+    -- resisted cast alone must not trigger a second tag; an actual fade
+    -- gets a follow-up on the same NPC after its effect wears off.
+    r.monk.phase='waitingMob';r.monk.pullId=110;r.monk.pullName='a goblin lost in transit'
+    r.monk.waitMobId=110;r.monk.pullTagAt=mock.time;r.monk.pullFadeRetries=0
+    r.monk.waitMobGrace=mock.time+40000;r.monk.waitMobDeadline=mock.time+120000
+    value('Target.ID',110);value('Me.AltAbilityReady[Distant Strike]','TRUE')
+    r:call('event_pullfadecast','A goblin lost in transit begins casting Chokidai Fade.','A goblin lost in transit')
+    tick(r,100);eq(r.monk.phase,'waitingMob','fade cast alone is not confirmation')
+    r:call('event_pullfadeescape','You escape from combat and evade your opponents.')
+    value('Me.Invis','TRUE');tick(r,100)
+    eq(r.monk.phase,'waitingMob','wait while fade remains active')
+    value('Me.Invis','FALSE');r:call('event_pullfadeend','The mystical power fades.')
+    tick(r,3000);eq(r.monk.phase,'outbound','confirmed fade re-arms the same pull')
+    eq(r.monk.pullId,110,'follow-up retains exact target ID')
+    before=#mock.commands;tick(r)
+    assert(commandsSince(before,'/alt act 12345'),'follow-up hit after confirmed fade wears off')
+    r:dispatch('campoff');r:dispatch('camphere');r:dispatch('pullon')
+
+    value('Target.ID',103)
     -- Throw Stone fallback and cancel during outbound navigation.
     value('Me.AltAbilityReady[Distant Strike]','FALSE')
     mob(103,'a goblin scout',195,200,5,true)
@@ -531,24 +551,39 @@ return function(setup,mock,eq)
     before=#mock.commands;tick(monk)
     assert(commandsSince(before,string.format('/doability %q',drunken)),'maintain learned combat buff discipline')
     readyDisc(drunken,false)
-    for _,name in ipairs({synergy,fists,phantom,shuriken}) do
+    for _,name in ipairs({synergy,shuriken}) do
         before=#mock.commands;tick(monk)
         assert(commandsSince(before,string.format('/doability %q',name)),'use DPS discipline '..name)
         readyDisc(name,false)
     end
     before=#mock.commands;tick(monk)
     assert(commandsSince(before,'/doability Flying Kick'),'use flying kick')
+    assert(not commandsSince(before,string.format('/doability %q',fists)) and not commandsSince(before,string.format('/doability %q',phantom)),'reserve heavy DPS for multiple mobs')
     assert(not commandsSince(before,string.format('/doability %q',"Doomwalker's Synergy Rk. II")),'do not downgrade on cooldown')
     readySkill('Flying Kick',false)
     before=#mock.commands;tick(monk)
     assert(commandsSince(before,'/doability Tiger Claw'),'use independent hand strike')
     readySkill('Tiger Claw',false);tick(monk)
 
+    value('Me.PctEndurance',55);readyDisc(shuriken,true);readyDisc(synergy,true)
+    before=#mock.commands;tick(monk)
+    assert(not commandsSince(before,string.format('/doability %q',shuriken)), 'preserve endurance reserve on ordinary fights')
+    value('Me.PctEndurance',100)
+    before=#mock.commands;tick(monk)
+    assert(not commandsSince(before,string.format('/doability %q',synergy)), 'do not repeat synergy on the same ordinary target')
+    assert(commandsSince(before,string.format('/doability %q',shuriken)), 'cheap discipline resumes above reserve')
+    readyDisc(shuriken,false);readyDisc(synergy,false);tick(monk)
+
     readyDisc(heel,true);readyDisc(speed,true)
     -- Regular fights, elapsed time and remote extended targets do not burn.
     before=#mock.commands;tick(monk,16000)
     assert(not commandsSince(before,string.format('/doability %q',heel)),'single ordinary mob never triggers burns, even in a long fight')
     mob(502,'a camp add',115,200,5,true);value('Me.XTarget[7].ID',502);value('Me.XTarget',2)
+    for _,name in ipairs({fists,phantom}) do
+        before=#mock.commands;tick(monk)
+        assert(commandsSince(before,string.format('/doability %q',name)),'spend heavy endurance on multiple mobs: '..name)
+        readyDisc(name,false)
+    end
     before=#mock.commands;tick(monk)
     assert(not commandsSince(before,string.format('/doability %q',heel)),'two camp mobs do not trigger burns')
     mob(503,'a distant add',175,200,5,true);value('Me.XTarget[9].ID',503);value('Me.XTarget',3)

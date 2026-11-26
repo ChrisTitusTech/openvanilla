@@ -244,7 +244,9 @@ instead of immediately repeating the same pull. A confirmed incoming NPC
 that disappears from extended targets gets a travel-time allowance of
 40–60 seconds; observed progress toward camp extends that wait. Nearby
 pull candidates are briefly deferred after an unresolved arrival so the
-next tag cannot re-aggro the same pack. AutoLua
+next tag cannot re-aggro the same pack. A confirmed Chokidai Fade gets
+one follow-up tag on the same NPC after the fade clears, subject to
+normal pull safety checks. AutoLua
 disables MQ2Melee throughout the entire monk session, including in camp,
 during combat, when pulling is off, and when zoning. On a graceful
 AutoLua stop, it restores the plugin's original enabled state without
@@ -292,8 +294,15 @@ lets the monk assist the tank when NPCs stop just outside camp but does
 not change pull or return-to-camp distances. When a living nearby tank has
 intercepted a damaged extended target, a bounded 50-unit margin permits
 joining that fight only when the NPC is within 35 units of the tank.
-Ordinary fights, elapsed fight time and
-extended targets outside camp do not trigger burns.
+Repeated expensive Fists, Phantom, Fang and Storm disciplines are
+reserved for named targets or at least two live NPCs in camp. On ordinary
+single targets, Synergy and Curse are used at most once per target,
+and cheaper damage disciplines maintain a five-percentage-point
+reserve above the pull endurance minimum. Free melee skills remain active.
+Drunken Monkey Style is refreshed on normal targets only when endurance
+is at least fifteen percentage points above the pull minimum. Ordinary
+fights, elapsed fight time and extended targets outside camp do not
+trigger major burns.
 Long-duration active discs are not overwritten. Offensive abilities require a
 valid target and range; readiness, health and endurance reserves are checked. Requests are
 confirmed from cooldown or cast state and failed requests back off.
@@ -309,6 +318,7 @@ The next pull waits for combat to finish and for monk/group health
 downtime the monk uses available endurance recovery, respects the
 learned recovery discipline's activation cap (Breather Rk. III: 29%),
 and sits until its configured health/endurance requirements are met.
+It also recovers endurance while safely waiting at camp for an incoming mob.
 The GUI status displays recovery progress; the monk stands for incoming
 combat or when ready to resume pulling.
 If the group starts fighting or falls below readiness during approach,

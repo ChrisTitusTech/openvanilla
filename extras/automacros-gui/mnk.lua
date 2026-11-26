@@ -2,7 +2,9 @@
 local mq = require('mq')
 local shared = require('automacros.shared')
 local Obs = require('automacros.observer')
-local M = {events={}, binds={pullon='bind_pullon', pulloff='bind_pulloff',
+local M = {events={{'pullfadecast','#1# begins casting Chokidai Fade.'},
+    {'pullfadeescape','You escape from combat and evade your opponents.'},
+    {'pullfadeend','The mystical power fades.'}}, binds={pullon='bind_pullon', pulloff='bind_pulloff',
     pullstatus='bind_pullstatus', pullradius='bind_pullradius',namedstatus='bind_namedstatus'}, chat={}}
 
 local settings = {
@@ -98,11 +100,13 @@ local function stopCombat(r,s)
     if s.attackOwned then command(r,'/squelch /attack off') end
     if s.stickOwned then command(r,'/stick off') end
     s.attackOwned=nil;s.stickOwned=nil;s.combatId=nil;s.nextAttack=nil;s.nextStick=nil
+    s.normalTarget=nil;s.normalUsed=nil
 end
 local function reset(r,s,message)
     stopNav(r,s);stopCombat(r,s)
     s.phase='idle';s.pullId=nil;s.pullName=nil;s.nextPull=now()+1000
     s.action=nil;s.engageDeadline=nil;s.approachLimit=nil;s.navApproachRange=nil;s.waitMobId=nil;s.pausedAt=nil;s.feign=nil;s.restOwned=nil;s.nextRestCommand=nil
+    s.pullTagAt=nil;s.pullFadeCast=nil;s.pullFadeAt=nil;s.pullFadeEnded=nil;s.pullFadeRetries=nil
     if message then status(r,s,message) end
 end
 local function invalidateCamp(r,s,message)
@@ -459,6 +463,7 @@ end
 local function setPullTarget(r,s,id,path)
     s.pullId=id;s.pullName=tostring(read(spawn(id)..'.CleanName'))
     s.pathLength=path;s.nextRescan=now()+5000;s.faceId=nil;s.navApproachRange=nil
+    s.pullTagAt=nil;s.pullFadeCast=nil;s.pullFadeAt=nil;s.pullFadeEnded=nil;s.pullFadeRetries=0
     status(r,s,string.format('Pulling %s (ID %d, path %.0f)',s.pullName,id,path or 0))
 end
 local function requestTag(r,s,method,t)
@@ -476,6 +481,7 @@ local function requestTag(r,s,method,t)
     local ping=math.max(0,num('EverQuest.Ping'))
     local confirmWindow=math.max(300,3*ping)
     s.engageDeadline=s.engageDeadline or (t+cfg(r,'PullTimeout')*1000)
+    s.pullTagAt=t
     command(r,method.command)
     s.navApproachRange=nil
     s.action={name=method.name,ready=method.ready,requested=t,confirmed=false,
@@ -804,22 +810,29 @@ local function abilityTick(r,s,mode,hostile)
     if math.max(s.maxAggro or 0,num('Me.PctAggro'))>=80 and aa('Silent Strikes',buff) then return true end
     -- Count only live encounter NPCs physically inside the anchored camp.
     -- Extended targets still on the way or elsewhere in the zone are not adds.
-    local burn=yes(e..'.Named')
-    if not burn then
-        local inCamp,includesTarget=0,false
-        for _,id in ipairs(hostile) do
-            if id==s.combatId then includesTarget=true end
-            if combatTargetInCamp(r,s,id) then
-                inCamp=inCamp+1
-            end
-        end
-        -- A group-assist target may be engaged before it appears on our XTarget.
-        if not includesTarget and combatTargetInCamp(r,s,s.combatId) then
+    local named=yes(e..'.Named')
+    local inCamp,includesTarget=0,false
+    for _,id in ipairs(hostile) do
+        if id==s.combatId then includesTarget=true end
+        if combatTargetInCamp(r,s,id) then
             inCamp=inCamp+1
         end
-        burn=inCamp>=3
     end
-    if aa("Zan Fi's Whistle",buff) or d('drunken',buff) or d('wu',buff) then return true end
+    if not includesTarget and combatTargetInCamp(r,s,s.combatId) then inCamp=inCamp+1 end
+    local burn=named or inCamp>=3
+    local hard=named or inCamp>=2
+    if s.normalTarget~=s.combatId then s.normalTarget=s.combatId;s.normalUsed={} end
+    local reserve=math.min(100,cfg(r,'PullMinEndurance')+5)
+    local function normalDisc(key,options,once)
+        if hard then return d(key,options) end
+        local a=kit.disc[key]
+        if not a or endu<=reserve or (once and s.normalUsed[key]) then return false end
+        local maxEnd=num('Me.MaxEndurance')
+        if maxEnd>0 and a.cost and a.cost>0 and num('Me.CurrentEndurance')-a.cost<maxEnd*reserve/100 then return false end
+        if d(key,options) then if once then s.normalUsed[key]=true end;return true end
+        return false
+    end
+    if aa("Zan Fi's Whistle",buff) or ((hard or endu>=math.min(100,reserve+10)) and d('drunken',buff)) or normalDisc('wu',buff) then return true end
     if burn and hp>65 and (targetHP==0 or targetHP>20) then
         if d('form') or (endu>=70 and aa("Ton Po's Stance",buff)) or
            d('heel',slot) or d('speed',slot) or d('iron',slot) or d('palm',slot) or
@@ -829,9 +842,11 @@ local function abilityTick(r,s,mode,hostile)
         -- break mez or pull extra nearby mobs with Destructive Force.
         if kit.disc.speed and read('Me.ActiveDisc.Name')==kit.disc.speed.name and aa('Focused Destructive Force',buff) then return true end
     end
-    if hp>65 and d('storm',slot) then return true end
-    if d('synergy') or (targetHP>25 and (d('curse') or aa('Two-Finger Wasp Touch'))) or
-       d('fists') or d('phantom') or d('fang') or d('precision') or d('shuriken') or
+    if hard and hp>65 and d('storm',slot) then return true end
+    -- Synergy and curse are valuable once per normal target; repeated
+    -- expensive damage disciplines are reserved for hard engagements.
+    if normalDisc('synergy',nil,true) or (targetHP>25 and (normalDisc('curse',nil,true) or aa('Two-Finger Wasp Touch'))) or
+       (hard and (d('fists') or d('phantom') or d('fang'))) or normalDisc('precision') or normalDisc('shuriken') or
        (hp>=80 and targetHP>20 and aa('Five Point Palm')) then return true end
     if num('Me.AltAbility[Intimidation].Rank')>1 and skill('Intimidation') then return true end
     return skill('Flying Kick') or skill('Round Kick') or skill('Kick') or
@@ -998,6 +1013,27 @@ function M.event_zoned(r,line)
         invalidateCamp(r,s,'Zone changed; set a new camp')
     end
 end
+-- Chokidai Fade is cast on the puller, clearing its hate immediately. Only
+-- associate an explicit escape with our recently tagged matching NPC.
+function M.event_pullfadecast(r,line,name)
+    local s=state(r)
+    if s.pullId and s.pullTagAt and now()-s.pullTagAt<=5000 and
+        (s.phase=='awaitAggro' or s.phase=='returning' or s.phase=='waitingMob') and
+        tostring(name):lower()==tostring(s.pullName):lower() and num('Target.ID')==s.pullId then
+        s.pullFadeCast=now()
+    end
+end
+function M.event_pullfadeescape(r)
+    local s=state(r)
+    if s.pullId and s.pullFadeCast and now()-s.pullFadeCast<=1500 then
+        s.pullFadeAt=now();s.pullFadeEnded=nil;s.pullFadeCast=nil
+        r:log('Monk: Confirmed Chokidai Fade on pull ID '..s.pullId)
+    end
+end
+function M.event_pullfadeend(r)
+    local s=state(r)
+    if s.pullFadeAt and now()-s.pullFadeAt<=12000 then s.pullFadeEnded=true end
+end
 function M.onstop(r)
     local s=state(r)
     reset(r,s,'Stopped');resumeMelee(r,s)
@@ -1069,6 +1105,32 @@ function M.classmainloop(r)
             end
         else status(r,s,'Set camp here first') end
         return
+    end
+    -- A confirmed Chokidai Fade is different from an unexplained lost
+    -- XTarget. Retag only that same NPC, after the effect wears off, and
+    -- only while no encounter is active. The ordinary crowded-approach,
+    -- health, resource and multi-add safeguards still apply to the retry.
+    if s.pullFadeAt and (s.phase=='awaitAggro' or s.phase=='returning' or s.phase=='waitingMob') then
+        if (s.pullFadeEnded or t-s.pullFadeAt>=5000) and (#hostile>0 or assist) then s.pullFadeAt=nil;s.pullFadeEnded=nil
+        elseif cfg(r,'AutoPull')==1 and (s.pullFadeRetries or 0)<1 and eligible(r,s,s.pullId) and
+            not engaged and not assist and (s.pullFadeEnded or t-s.pullFadeAt>=5000) then
+            local ready=groupReady(r)
+            local method=pullMethod()
+            if ready and method and (method.name=='Distant Strike' or canTag(s.pullId,method)) then
+                if sitting() then
+                    if t>=(s.nextRestCommand or 0) then
+                        command(r,'/stand');s.nextRestCommand=t+500
+                    end
+                    return
+                end
+                stopNav(r,s);s.phase='outbound';s.deadline=t+45000;s.engageDeadline=nil
+                s.action=nil;s.approachLimit=nil;s.navApproachRange=nil;s.waitMobId=nil
+                s.pullFadeAt=nil;s.pullFadeEnded=nil;s.pullFadeRetries=(s.pullFadeRetries or 0)+1
+                s.nextRescan=t+45000
+                status(r,s,'Chokidai Fade cleared; retagging '..s.pullName)
+                return
+            end
+        end
     end
     local pullPhase=s.phase=='outbound' or s.phase=='awaitAggro' or s.phase=='returning'
     local hp=num('Me.PctHPs')
@@ -1182,7 +1244,15 @@ function M.classmainloop(r)
             s.phase='idle';s.pullId=nil;s.pullName=nil;s.waitMobId=nil;s.nextPull=t+1500
             status(r,s,lost and 'Mob lost aggro before arriving; temporarily skipping' or 'Mob arrival wait complete')
         elseif campDistance(s)<=cfg(r,'AutoCampRadius') then
-            abilityTick(r,s,'recovery',hostile)
+            if not engaged and not assist and num('Me.PctEndurance')<cfg(r,'PullMinEndurance') and
+                not yes('Me.Moving') and not yes('Navigation.Active') and not yes('MoveTo.Moving') and
+                not yes('Stick.Active') and num('Me.Casting.ID')==0 and not s.abilityPending then
+                if not abilityTick(r,s,'idle',hostile) and read('Me.CombatState')~='DEBUFFED' and
+                    yes('Me.Standing') and t>=(s.nextRestCommand or 0) then
+                    command(r,'/sit');s.restOwned=true;s.nextRestCommand=t+500
+                    r:logAction('monk-arrival-rest','Monk: Recovering endurance while awaiting incoming mob')
+                end
+            else abilityTick(r,s,'recovery',hostile) end
         end
         return
     end
