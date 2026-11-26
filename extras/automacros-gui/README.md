@@ -97,24 +97,28 @@ The new native Lua class module is selected automatically on a monk by
 1. Move the monk to the desired camp with the group and click
    **Set camp here** (or use `/autolua camphere`).
 2. On the monk's GUI, optionally enter the NPC name substring and adjust
-   the pull radius (default 200 units) and camp radius (default 30 units).
+   the pull radius (default 350 units) and camp radius (default 30 units).
 3. Enable **Auto pull**, or run `/autolua pullon`.
 
 Auto pull is off on the first run and requires a freshly anchored camp
 each script session or zone change. A loaded MQ2Nav zone mesh is required.
-The monk chooses a living, targetable non-pet NPC within the configured
-radius and vertical limit, excluding special service classes. Unknown or
-partial NPC HP readings do not disqualify a living pull candidate.
-An optional literal name substring restricts the NPC selection further.
-If no idle target can be reached, the GUI and per-character log report
-the candidate count and rejection reasons, including no NPCs in the
-configured radius, vertical range, name filter and missing nav paths.
+The monk enumerates loaded NPCs through the native MQ Lua spawn API.
+Horizontal camp radius and vertical radius (default 90) are independent.
+Living, targetable non-pet NPCs are filtered for special service classes,
+encounter locks and the optional literal name substring. Unknown or
+partial NPC HP does not disqualify a living pull candidate. Valid targets
+are ranked by actual MQ2Nav path length, subject to a maximum path
+distance (default 1000). The GUI and log report candidate counts and
+rejection reasons. While navigating out, the monk rescans every five
+seconds and switches if a materially shorter path becomes available.
 
 The monk uses **Distant Strike** when ready, falling back to **Throw Stone**.
-It approaches via MQ2Nav when necessary, confirms its target, waits for
-hostile aggro or combat state, and returns to the camp's saved XYZ
-coordinates. At camp, the optional handoff uses MQ2Melee's `/killthis` for
-a confirmed combat target. MQ2Melee (when loaded and enabled) handles all
+It resolves the actual AA ID, confirms its target and ability activation
+using casting/cooldown state, and retries or moves closer until aggro is
+confirmed (default timeout 15 seconds). It returns to the camp's saved
+XYZ coordinates and waits for the mob to enter the camp radius or for
+aggro to be lost. At camp, the optional handoff uses MQ2Melee's
+`/killthis` for a confirmed combat target. MQ2Melee (when loaded and enabled) handles all
 attack, stick, abilities, disciplines and AA usage. AutoLua does not
 change MQ2Melee settings or stop its combat. The next pull waits for
 combat to finish and for
@@ -127,7 +131,7 @@ automatic feign-death splitting or a full monk burn rotation.
 Commands:
 
 - `/autolua pullon` and `/autolua pulloff` enable/disable new pulls.
-- `/autolua pullradius 200` sets a radius from 50 to 500 units.
+- `/autolua pullradius 200` sets a radius from 50 to 10000 units.
 - `/autolua pullstatus` displays the current state.
 - `/autolua camphere` re-anchors camp and `/autolua campoff` clears it.
 - `/autolua backoff` stops pulling and future MQ2Melee handoffs;
@@ -139,6 +143,14 @@ For an already-installed GUI/Selo overlay, apply only
 `monk-integration.patch`, copy the updated `gui.lua`, new `mnk.lua`, and
 `test_monk.lua` as shown above. No rebuild or relog is required. The
 offline suite exercises the pull cycle, 3D camp coordinates, group
-readiness, navigation, target selection, GUI persistence, timeout,
-cancellation, and zone invalidation. Live pathing and ability activation
-still need verification in the current zone.
+readiness, native spawn enumeration, path ranking, AA activation and
+retry, rescan, mob-arrival wait, GUI persistence, timeout, cancellation,
+and zone invalidation. Existing character INI settings are preserved
+when upgrading; the new path limit and timeout are initialized on first
+run. Live pathing and ability activation still need verification in the
+current zone.
+
+The scan/path-ranking and action-confirmation design is informed by the
+open-source [RG Mercs pull module](https://github.com/DerpleDude/rgmercs/blob/a4b1ffc3f97a9c13a97510e4693b4d6ca6501b40/modules/pull.lua)
+and [casting utilities](https://github.com/DerpleDude/rgmercs/blob/a4b1ffc3f97a9c13a97510e4693b4d6ca6501b40/utils/casting.lua);
+AutoLua implements its own camp-specific state machine.

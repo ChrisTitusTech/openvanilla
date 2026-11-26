@@ -17,8 +17,10 @@ local classes = {
     war = {},
     mnk = {
         {'AutoPull', 'Auto pull', 'toggle'},
-        {'PullRadius', 'Pull radius (units)', 'number', 50, 500},
-        {'PullZRadius', 'Vertical pull radius (units)', 'number', 10, 100},
+        {'PullRadius', 'Pull radius (units)', 'number', 50, 10000},
+        {'PullZRadius', 'Vertical pull radius (units)', 'number', 10, 350},
+        {'PullMaxPath', 'Maximum navigation path (units)', 'number', 50, 10000},
+        {'PullTimeout', 'Pull activation timeout (seconds)', 'number', 5, 60},
         {'PullMinHP', 'Minimum monk/group HP (%)', 'number', 50, 100},
         {'PullMinEndurance', 'Minimum endurance (%)', 'number', 0, 100},
         {'PullMinHealerMana', 'Minimum healer mana (%)', 'number', 0, 100},

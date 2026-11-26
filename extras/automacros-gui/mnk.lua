@@ -9,7 +9,8 @@ local settings = {
     {'AutoCampRadius','int',30}, {'AutoAssistAt','int',100},
     {'FollowToonName','string','NULL'}, {'UseFellowship','int',0},
     {'InstantRelease','int',0}, {'AutoPull','int',0},
-    {'PullRadius','int',200}, {'PullZRadius','int',50},
+    {'PullRadius','int',350}, {'PullZRadius','int',90},
+    {'PullMaxPath','int',1000}, {'PullTimeout','int',15},
     {'PullMinHP','int',80}, {'PullMinEndurance','int',50},
     {'PullMinHealerMana','int',50}, {'PullName','string','NULL'},
 }
@@ -35,6 +36,10 @@ local function distance(a,b)
     if not a or not b then return math.huge end
     return math.sqrt((a.x-b.x)^2+(a.y-b.y)^2+(a.z-b.z)^2)
 end
+local function horizontalDistance(a,b)
+    if not a or not b then return math.huge end
+    return math.sqrt((a.x-b.x)^2+(a.y-b.y)^2)
+end
 local function spawn(id) return 'Spawn[id '..id..']' end
 local function npc(id)
     if not id or id<=0 then return false end
@@ -52,6 +57,7 @@ end
 local function reset(r,s,message)
     stopNav(r,s)
     s.phase='idle';s.pullId=nil;s.pullName=nil;s.handoffId=nil;s.nextPull=now()+1000
+    s.action=nil;s.engageDeadline=nil;s.approachLimit=nil;s.waitMobId=nil
     if message then status(r,s,message) end
 end
 local function invalidateCamp(r,s,message)
@@ -86,27 +92,28 @@ local function startNav(r,s,dest,range)
     end
     if not pathExists(dest) then return false end
     if yes('Me.Sitting') then command(r,'/stand') end
-    command(r,'/nav '..dest..' distance='..range)
+    command(r,'/nav '..dest..' distance='..range..(dest:sub(1,3)=='id ' and ' lineofsight=on' or ''))
     s.navOwned=true;s.navStarted=now()
     return true
 end
-local function returnHome(r,s,reason)
+local function returnHome(r,s,reason,waitMobId)
     stopNav(r,s)
-    s.phase='returning';s.nextNav=0
+    s.phase='returning';s.nextNav=0;s.waitMobId=waitMobId;s.returnDeadline=now()+120000
+    s.action=nil;s.engageDeadline=nil;s.approachLimit=nil
     status(r,s,'Returning to camp: '..reason)
 end
 
 local function hostiles()
     local list={}
-    local count=num('Me.XTarget')
-    if count<=0 and num('Me.XTarget[1].ID')<=0 then return list end
-    local slots=math.min(40,math.max(1,num('Me.XTargetSlots'),count))
+    local slots=math.min(40,math.max(1,num('Me.XTargetSlots'),num('Me.XTarget')))
     local seen={}
     for i=1,slots do
         local e='Me.XTarget['..i..']'
         local id=num(e..'.ID')
-        if id>0 and not seen[id] and read(e..'.Type')=='NPC' and
-           (read(e..'.TargetType')=='Auto Hater' or num(e..'.PctAggro')>0) and npc(id) then
+        local typ=read(e..'.Type')
+        if id>0 and not seen[id] and typ~='Corpse' and not yes(e..'.Dead') and
+           (read(e..'.TargetType')=='Auto Hater' or num(e..'.PctAggro')>0 or
+            (typ=='NPC' and yes(e..'.Aggressive'))) then
             seen[id]=true;list[#list+1]=id
         end
     end
@@ -136,17 +143,30 @@ local function groupReady(r)
     return true
 end
 local function pullMethod()
-    if yes('Me.AltAbilityReady[Distant Strike]') then
-        local range=num('Me.AltAbility[Distant Strike].Spell.Range')
-        if range>0 then return {name='Distant Strike',range=math.max(10,math.floor(range-8)),command='/aa act Distant Strike'} end
+    local aa='Me.AltAbility[Distant Strike]'
+    local aaReady='Me.AltAbilityReady[Distant Strike]'
+    if yes(aaReady) then
+        local id=num(aa..'.ID')
+        local range=num(aa..'.Spell.MyRange')
+        if range<=0 then range=num(aa..'.Spell.Range') end
+        if id>0 and range>0 then
+            return {name='Distant Strike',range=math.max(10,math.floor(range-8)),
+                command='/alt act '..id,ready=aaReady,castTime=num(aa..'.Spell.MyCastTime.Raw')}
+        end
     end
-    if yes('Me.CombatAbilityReady[Throw Stone]') then
-        local range=num('Spell[Throw Stone].Range')
-        if range>0 then return {name='Throw Stone',range=math.max(10,math.floor(range-5)),command='/doability "Throw Stone"'} end
+    local stoneReady='Me.CombatAbilityReady[Throw Stone]'
+    if yes(stoneReady) then
+        local range=num('Spell[Throw Stone].MyRange')
+        if range<=0 then range=num('Spell[Throw Stone].Range') end
+        if range>0 then
+            return {name='Throw Stone',range=math.max(10,math.floor(range-5)),
+                command='/doability "Throw Stone"',ready=stoneReady,castTime=num('Spell[Throw Stone].MyCastTime.Raw')}
+        end
     end
 end
-local function canTag(id,method)
-    return method and npc(id) and num(spawn(id)..'.Distance3D')<=method.range and yes(spawn(id)..'.LineOfSight')
+local function canTag(id,method,limit)
+    return method and npc(id) and num(spawn(id)..'.Distance3D')<=math.min(method.range,limit or method.range)
+        and yes(spawn(id)..'.LineOfSight')
 end
 local function candidateReason(r,s,id)
     if not id or id<=0 then return 'missing spawn' end
@@ -155,10 +175,11 @@ local function candidateReason(r,s,id)
     if not yes(e..'.Targetable') then return 'untargetable' end
     if yes(e..'.Dead') then return 'dead' end
     if num(e..'.Master.ID')>0 then return 'pet' end
+    if read(e..'.CanEngage')=='FALSE' then return 'encounter locked' end
     local p=position(e)
     if not p then return 'unknown position' end
     if math.abs(p.z-s.camp.z)>cfg(r,'PullZRadius') then return 'vertical range' end
-    if distance(p,s.camp)>cfg(r,'PullRadius') then return 'camp range' end
+    if horizontalDistance(p,s.camp)>cfg(r,'PullRadius') then return 'camp range' end
     -- NPC HP is not always populated before targeting. Type/Dead, rather
     -- than an exact 100% HP reading, identify a living pull candidate.
     -- Unknown class (0) is possible; exclude known service classes.
@@ -170,34 +191,64 @@ local function candidateReason(r,s,id)
     end
 end
 local function eligible(r,s,id) return candidateReason(r,s,id)==nil end
-local function selectTarget(r,s,method)
-    local radius=clamp(cfg(r,'PullRadius'),50,500)
-    -- Search from the monk, then enforce the actual camp-centered limit.
-    local searchRadius=math.ceil(radius+campDistance(s))
-    local search='npc radius '..searchRadius
-    local count=num('SpawnCount['..search..']')
+-- Enumerate loaded spawns directly, rather than depending on NearestSpawn's
+-- 3D radius / ordering. Filter horizontal camp radius and Z independently.
+local function scanIds(r,s)
+    local radius=clamp(cfg(r,'PullRadius'),50,10000)
+    local ids={}
+    if type(mq.getFilteredSpawns)=='function' then
+        local cx,cy=s.camp.x,s.camp.y
+        local spawns=mq.getFilteredSpawns(function(sp)
+            local id=sp.ID()
+            if not id or id<=0 or sp.Type()~='NPC' then return false end
+            local x,y=sp.X(),sp.Y()
+            return x and y and (x-cx)^2+(y-cy)^2<=radius^2
+        end)
+        for _,sp in ipairs(spawns) do
+            local id=sp.ID()
+            if id and id>0 then ids[#ids+1]=id end
+        end
+    else
+        -- Keep compatibility with previous MQ Lua versions.
+        local searchRadius=math.ceil(math.sqrt(radius^2+cfg(r,'PullZRadius')^2)+campDistance(s))
+        local search='npc radius '..searchRadius
+        for i=1,num('SpawnCount['..search..']') do ids[#ids+1]=num('NearestSpawn['..i..','..search..'].ID') end
+    end
+    return ids,radius
+end
+local function selectTarget(r,s)
+    local ids,radius=scanIds(r,s)
     local t=now();local rejected={};local samples={}
-    for i=1,count do
-        local id=num('NearestSpawn['..i..','..search..'].ID')
+    local best,bestPath
+    for _,id in ipairs(ids) do
         local reason=candidateReason(r,s,id)
         if not reason and (s.rejected[id] or 0)>t then reason='retry cooldown' end
-        if not reason and not canTag(id,method) and not pathExists('id '..id) then reason='no nav path' end
+        local path
         if not reason then
-            s.scanSummary=string.format('Found %d NPCs; selected ID %d',count,id)
-            return id
+            path=num('Navigation.PathLength[id '..id..']')
+            if path<=0 then reason='no nav path'
+            elseif path>cfg(r,'PullMaxPath') then reason='path too long' end
         end
-        rejected[reason]=(rejected[reason] or 0)+1
-        if #samples<6 and id>0 then
-            samples[#samples+1]=string.format('%s (%d): %s',tostring(read(spawn(id)..'.CleanName')),id,reason)
+        if not reason then
+            if not best or path<bestPath or (path==bestPath and id<best) then best,bestPath=id,path end
+        else
+            rejected[reason]=(rejected[reason] or 0)+1
+            if #samples<6 and id>0 then
+                samples[#samples+1]=string.format('%s (%d): %s',tostring(read(spawn(id)..'.CleanName')),id,reason)
+            end
         end
+    end
+    if best then
+        s.scanSummary=string.format('Found %d NPCs; selected ID %d (path %.0f)',#ids,best,bestPath)
+        return best,bestPath
     end
     local counts={}
     for reason,n in pairs(rejected) do counts[#counts+1]=reason..'='..n end
     table.sort(counts)
-    if count==0 then
+    if #ids==0 then
         s.scanSummary='No NPCs within '..radius..' units of camp'
     else
-        s.scanSummary='Found '..count..' NPCs; rejected: '..table.concat(counts,', ')
+        s.scanSummary='Found '..#ids..' NPCs; rejected: '..table.concat(counts,', ')
     end
     local detail=s.scanSummary..(#samples>0 and ' | '..table.concat(samples,'; ') or '')
     if s.lastScan~=detail or t>=(s.nextScanLog or 0) then
@@ -209,6 +260,47 @@ local function reject(r,s,reason)
     if s.pullId then s.rejected[s.pullId]=now()+30000 end
     returnHome(r,s,reason)
 end
+local function setPullTarget(r,s,id,path)
+    s.pullId=id;s.pullName=tostring(read(spawn(id)..'.CleanName'))
+    s.pathLength=path;s.nextRescan=now()+5000;s.faceId=nil
+    status(r,s,string.format('Pulling %s (ID %d, path %.0f)',s.pullName,id,path or 0))
+end
+local function requestTag(r,s,method,t)
+    stopNav(r,s)
+    -- Do not fire on a previous target or while navigation is still stopping.
+    if num('Target.ID')~=s.pullId then
+        command(r,'/squelch /target id '..s.pullId);status(r,s,'Targeting '..s.pullName);return
+    end
+    if not yes('Me.Standing') then command(r,'/stand');status(r,s,'Standing to pull');return end
+    if yes('Navigation.Active') or yes('Me.Moving') then status(r,s,'Waiting for movement to stop before tagging');return end
+    if num('Me.Casting.ID')>0 then status(r,s,'Waiting for current cast before tagging');return end
+    if not yes(method.ready) then status(r,s,'Waiting for '..method.name..' readiness');return end
+    if s.faceId~=s.pullId then command(r,'/face fast');s.faceId=s.pullId end
+    local ping=math.max(0,num('EverQuest.Ping'))
+    local confirmWindow=math.max(300,3*ping)
+    s.engageDeadline=s.engageDeadline or (t+cfg(r,'PullTimeout')*1000)
+    command(r,method.command)
+    s.action={name=method.name,ready=method.ready,requested=t,confirmed=false,
+        confirmAt=t+method.castTime+confirmWindow}
+    s.nextAction=t+math.max(500,method.castTime+confirmWindow)
+    s.phase='awaitAggro'
+    r:log(string.format('Monk pull request: %s target=%d distance=%.1f range=%d ready=TRUE command=%s',
+        method.name,s.pullId,num(spawn(s.pullId)..'.Distance3D'),method.range,method.command))
+    status(r,s,'Requested '..method.name..' on '..s.pullName..'; waiting for activation')
+end
+local function observeAction(r,s,t)
+    local a=s.action
+    if not a or a.confirmed then return end
+    if read(a.ready)=='FALSE' or num('Me.Casting.ID')>0 then
+        a.confirmed=true
+        r:log('Monk pull activation confirmed: '..a.name..' target='..s.pullId)
+        status(r,s,'Activated '..a.name..'; waiting for aggro')
+    elseif t>=a.confirmAt and not a.reported then
+        a.reported=true
+        r:log('Monk pull activation not confirmed: '..a.name..' target='..s.pullId..' readiness='..tostring(read(a.ready)))
+    end
+end
+
 -- MQ2Melee owns all attack, stick, skills, disciplines and AA rotation.
 -- /killthis is its documented way to hand over a confirmed combat target.
 local function handoffCombat(r,s,hostile,assist)
@@ -277,10 +369,10 @@ function M.bind_pullon(r) M.bind_togglevariable(r,'AutoPull','1') end
 function M.bind_pulloff(r) M.bind_togglevariable(r,'AutoPull','0') end
 function M.bind_pullradius(r,value)
     local n=tonumber(value)
-    if n and n==math.floor(n) and n>=50 and n<=500 then
+    if n and n==math.floor(n) and n>=50 and n<=10000 then
         r:set({},'PullRadius',n);r:set({},'changetoini',1)
         print('[AutoLua] Pull radius '..n)
-    else print('[AutoLua] Pull radius must be 50-500') end
+    else print('[AutoLua] Pull radius must be 50-10000') end
 end
 function M.bind_pullstatus(r) print('[AutoLua] Monk: '..state(r).status) end
 function M.bind_backoff(r)
@@ -330,40 +422,84 @@ function M.classmainloop(r)
     end
     if s.phase=='returning' then
         if campDistance(s)<=math.min(12,cfg(r,'AutoCampRadius')) then
-            stopNav(r,s);s.phase='idle';s.pullId=nil;s.pullName=nil;s.nextPull=t+1500
-            status(r,s,'Back at camp')
+            stopNav(r,s);s.nextPull=t+1500
+            local waitId=s.waitMobId
+            if npc(waitId) and distance(position(spawn(waitId)),s.camp)>cfg(r,'AutoCampRadius') then
+                s.phase='waitingMob';s.waitMobDeadline=t+120000;s.waitMobGrace=t+3000
+                status(r,s,'Back at camp; waiting for '..tostring(read(spawn(waitId)..'.CleanName')))
+            else
+                s.phase='idle';s.pullId=nil;s.pullName=nil;s.waitMobId=nil
+                status(r,s,'Back at camp')
+            end
+        elseif t>=(s.returnDeadline or math.huge) then
+            invalidateCamp(r,s,'Return to camp timed out; set camp again')
         elseif t>=(s.nextNav or 0) and (not s.navOwned or (not yes('Navigation.Active') and t-(s.navStarted or 0)>1000)) then
             stopNav(r,s);s.nextNav=t+2000
             if not startNav(r,s,campCommand(s),8) then status(r,s,'Waiting for a navigable path back to camp') end
         end
         return
     end
+    if s.phase=='waitingMob' then
+        local id=s.waitMobId
+        if not npc(id) or distance(position(spawn(id)),s.camp)<=cfg(r,'AutoCampRadius') or
+           t>=s.waitMobDeadline or (not engaged and t>=s.waitMobGrace) then
+            s.phase='idle';s.pullId=nil;s.pullName=nil;s.waitMobId=nil;s.nextPull=t+1500
+            status(r,s,'Mob arrival wait complete')
+        end
+        return
+    end
     if s.phase=='outbound' then
-        if engaged then returnHome(r,s,'Aggro acquired on approach');return end
+        if engaged then returnHome(r,s,'Aggro acquired on approach',hostile[1] or s.pullId);return end
         if assist then returnHome(r,s,'Group already fighting');return end
         local ready,reason=groupReady(r)
         if not ready then returnHome(r,s,reason);return end
-        if not eligible(r,s,s.pullId) or t>=s.deadline then reject(r,s,'Pull target unavailable or unreachable');return end
+        if not eligible(r,s,s.pullId) or t>=s.deadline or (s.engageDeadline and t>=s.engageDeadline) then
+            reject(r,s,'Pull target unavailable, unreachable or timed out');return
+        end
+        if s.navOwned and yes('Navigation.Active') and not s.engageDeadline and t>=(s.nextRescan or 0) then
+            s.nextRescan=t+5000
+            local id,path=selectTarget(r,s)
+            local current=num('Navigation.PathLength[id '..s.pullId..']')
+            if id and id~=s.pullId and (current<=0 or path+5<current) then
+                stopNav(r,s);setPullTarget(r,s,id,path)
+                return
+            end
+        end
         local method=pullMethod()
-        if canTag(s.pullId,method) then
-            stopNav(r,s)
-            if num('Target.ID')~=s.pullId then command(r,'/squelch /target id '..s.pullId);return end
-            if yes('Me.Sitting') then command(r,'/stand');return end
-            if num('Me.Casting.ID')>0 then return end
-            command(r,method.command)
-            s.phase='awaitAggro';s.deadline=t+6000
-            status(r,s,'Tagged '..s.pullName..' with '..method.name..'; waiting for aggro')
+        if canTag(s.pullId,method,s.approachLimit) then
+            requestTag(r,s,method,t)
         elseif not s.navOwned or (not yes('Navigation.Active') and t-(s.navStarted or 0)>1000) then
             if not method then status(r,s,'Waiting for pull ability');return end
+            if yes('Navigation.Active') and not s.navOwned then status(r,s,'Waiting for navigation to stop');return end
             stopNav(r,s)
-            if not startNav(r,s,'id '..s.pullId,method.range) then reject(r,s,'No path to pull target') end
+            local range=math.min(method.range,s.approachLimit or method.range)
+            if not startNav(r,s,'id '..s.pullId,range) then reject(r,s,'No path to pull target') end
         end
         return
     end
     if s.phase=='awaitAggro' then
-        if num('Me.Casting.ID')>0 and t<s.deadline then return end
-        if engaged then returnHome(r,s,'Aggro confirmed')
-        elseif t>=s.deadline or not npc(s.pullId) then reject(r,s,'Pull not confirmed') end
+        observeAction(r,s,t)
+        if num('Me.Casting.ID')>0 and t<s.engageDeadline then return end
+        if engaged then
+            returnHome(r,s,'Aggro confirmed',hostile[1] or s.pullId);return
+        end
+        if t>=s.engageDeadline or not eligible(r,s,s.pullId) then
+            reject(r,s,'Pull not confirmed before timeout');return
+        end
+        local ready,reason=groupReady(r)
+        if not ready then returnHome(r,s,reason);return end
+        if assist then returnHome(r,s,'Group already fighting');return end
+        if t<(s.nextAction or 0) then return end
+        local method=pullMethod()
+        if not method then return end
+        if not canTag(s.pullId,method) or (s.action and s.action.reported and not s.approachLimit and
+            num(spawn(s.pullId)..'.Distance3D')>math.max(10,math.floor(method.range/2))) then
+            s.approachLimit=math.max(10,math.floor(method.range/2))
+            s.phase='outbound'
+            status(r,s,'Repositioning closer for '..method.name)
+        else
+            requestTag(r,s,method,t)
+        end
         return
     end
     local busyMovement=yes('Navigation.Active') or yes('MoveTo.Moving') or yes('Stick.Active') or yes('Me.Combat')
@@ -389,10 +525,11 @@ function M.classmainloop(r)
     if not ready then status(r,s,reason);s.nextPull=t+1000;return end
     local method=pullMethod()
     if not method then status(r,s,'Waiting for Distant Strike or Throw Stone');s.nextPull=t+1000;return end
-    local id=selectTarget(r,s,method)
+    local id,path=selectTarget(r,s)
     if not id then status(r,s,s.scanSummary or 'No eligible reachable NPC in pull radius');s.nextPull=t+1000;return end
-    s.pullId=id;s.pullName=read(spawn(id)..'.CleanName');s.phase='outbound';s.deadline=t+45000
-    status(r,s,'Pulling '..s.pullName..' (ID '..id..')')
+    s.phase='outbound';s.deadline=t+45000
+    s.action=nil;s.engageDeadline=nil;s.approachLimit=nil;s.waitMobId=nil
+    setPullTarget(r,s,id,path)
 end
 
 function M.main(r)
