@@ -48,6 +48,8 @@ lua_dir="$PWD/build/linux-x64/bin/release/lua"
 cd "$lua_dir/automacros"
 patch --dry-run -p1 < "$overlay/integration.patch"
 patch -p1 < "$overlay/integration.patch"
+patch --dry-run -p1 < "$overlay/selo-refresh.patch"
+patch -p1 < "$overlay/selo-refresh.patch"
 cp "$overlay/gui.lua" gui.lua
 cp "$overlay/test_gui.lua" tests/test_gui.lua
 cd "$lua_dir"
@@ -61,3 +63,20 @@ The updated patch also fixes the unnecessary zone-settle wait when the
 configured follow target is the legacy placeholder. The tests use mocked
 MQ data and do not operate on the game or real INIs. Actual startup timing
 depends on the client and spell setup.
+
+
+## Bard Selo refresh
+
+The additional `selo-refresh.patch` applies to the AutoLua 1.5 Bard
+runtime and its offline tests. It resolves the actual rank-I/II triggered
+speed buffs (Selo's Accelerando/Accelerato), checks their remaining
+duration at least every five seconds when idle between casts, and refreshes
+the instant AA during combat as well as downtime. Attempts are paced at
+15 seconds if the buff does not appear. Active casts, invisibility, and
+feign death remain protected. The log records the observed buff name and
+duration after a successful observation.
+
+For an existing installation with the GUI overlay already applied, apply
+only `selo-refresh.patch` once and restart AutoLua on the bard. The offline
+suite covers early buff disappearance, rank lookup fallback, combat
+refresh, and the inter-song casting boundary.

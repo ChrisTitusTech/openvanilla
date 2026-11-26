@@ -1,0 +1,199 @@
+--- a/bard.lua
++++ b/bard.lua
+@@ -1,34 +1,64 @@
+--- Selo's Sonata is an AA trigger, not necessarily the name of the resulting buff.
++-- Selo's Sonata is an instant AA trigger; its resulting speed buff has a different name.
+ local mq=require('mq')
+ local M={}
+ local function read(r,e) return mq.parse('${'..e..'}') end
++
++-- Locally installed spell data: rank I (12712) triggers group 108042,
++-- rank II (49586) triggers group 1408042. Trigger lookup by spell group
++-- can fail when the AA's triggered spell isn't in the character's spellbook.
++local seloNames={
++    ["Selo's Sonata I"]="Selo's Accelerando",
++    ["Selo's Sonata II"]="Selo's Accelerato",
++}
++
++local function effects(r)
++    local rank=read(r,'Me.AltAbility[3704].Spell.Name')
++    if r.seloEffects and r.seloRank==rank then return r.seloEffects end
++    local names={}
++    local function add(n) if n and n~='' and n~='NULL' then names[n]=true end end
++    add(seloNames[rank])
++    add(read(r,'Me.AltAbility[3704].Spell.Trigger.Name'))
++    for i=1,12 do add(read(r,'Me.AltAbility[3704].Spell.Trigger['..i..'].Name')) end
++    if not next(names) then
++        add("Selo's Accelerando")
++        add("Selo's Accelerato")
++        add("Selo's Sonata")
++    end
++    r.seloRank=rank
++    r.seloEffects=names
++    return names
++end
++
+ function M.selo(r)
+     local now=mq.gettime()
+-    if now<(r.seloNext or 0) or (r:get({},'castready') or 0)>0 then return end
+-    if read(r,'Me.AltAbilityReady[3704]')~='TRUE' or read(r,'Me.Invis')=='TRUE' or read(r,'Me.State')=='FEIGN' or read(r,'Me.Combat')=='TRUE' or
+-       (tonumber(read(r,'Me.Casting.ID')) or 0)>0 then return end
+-    if not r.seloEffects then
+-        local names={}
+-        local function add(n) if n and n~='' and n~='NULL' then names[n]=true end end
+-        add("Selo's Sonata")
+-        add(read(r,'Me.AltAbility[3704].Spell.Name'))
+-        add(read(r,'Me.AltAbility[3704].Spell.Trigger.Name'))
+-        for i=1,12 do add(read(r,'Me.AltAbility[3704].Spell.Trigger['..i..'].Name')) end
+-        r.seloEffects=names
+-    end
+-    local remaining=0
+-    for effect in pairs(r.seloEffects) do
+-        remaining=math.max(remaining,tonumber(read(r,'Me.BuffDuration['..effect..'].Raw')) or 0)
++    if now<(r.seloNext or 0) or (r:get({},'castready') or 0)>0 then return false end
++    if read(r,'Me.Invis')=='TRUE' or read(r,'Me.State')=='FEIGN' or
++       (tonumber(read(r,'Me.Casting.ID')) or 0)>0 then return false end
++    local remaining,active=0,nil
++    for effect in pairs(effects(r)) do
++        local ms=tonumber(read(r,'Me.BuffDuration[='..effect..'].Raw')) or 0
++        if ms>remaining then remaining,active=ms,effect end
+     end
+     if remaining>3000 then
+-        r.seloNext=now+math.max(5000,remaining-2000)
+-        r:logAction('selo-present','Selo refresh deferred remaining_ms='..remaining)
+-        return
++        -- Recheck periodically, rather than sleeping until the original
++        -- expiration: a dispel, zone or canceled buff can remove it early.
++        r.seloNext=now+math.min(5000,math.max(1000,remaining-3000))
++        if r.seloObserved~=active then
++            r:log('Selo buff observed effect='..active..' remaining_ms='..remaining)
++            r.seloObserved=active
++        end
++        return false
+     end
+-    -- Unknown/instant trigger results use a conservative retry, not the 5s AA reuse.
++    if read(r,"Me.AltAbilityReady[Selo's Sonata]")~='TRUE' and read(r,'Me.AltAbilityReady[3704]')~='TRUE' then
++        r.seloNext=now+1000
++        return false
++    end
++    -- Bound failed attempts and allow the server time to populate the buff.
+     r.seloNext=now+15000
++    r.seloObserved=nil
+     r:command({},'/squelch /alt act 3704')
+-    r:log('Selo refresh requested retry_ms=15000')
++    r:log('Selo refresh requested remaining_ms='..remaining..' retry_ms=15000')
++    return true
+ end
+ local function num(r,e) return tonumber(read(r,e)) or 0 end
+ local function known(r,spell)
+--- a/brd.lua
++++ b/brd.lua
+@@ -46,6 +46,9 @@
+ 
+ function M.classmainloop(r, ...)
+     local s = r:frame({}, ...)
++    -- Refresh the instant speed AA in both combat and downtime.
++    -- Give it a pulse before scheduling another song.
++    if Bard.selo(r) then return end
+     if r:condition(s, [=[!${Me.XTarget[1].ID}&&!${Me.Invis}]=]) then
+         r:invoke(s, [=[downtimesongs]=], [=[]=])
+     end
+@@ -185,8 +188,6 @@
+         r:invoke(s, [=[songqueue]=], [=["${regensong}"]=])
+     elseif r:condition(s, [=[${Select[${Me.Casting.ID},${Spell[${song1}].ID},${Spell[${song3}].ID},${Spell[${song4}].ID},${Spell[${song2}].ID},${Spell[${song5}].ID}]}>0&& !${Me.Invis}&&!${Me.Combat}&&${Me.XTarget}==0]=]) then
+         r:command(s, [=[/stopcast]=])
+-    else
+-        Bard.selo(r)
+     end
+     do return nil end
+     -- ----------------------------------------------------------------------------
+@@ -203,6 +204,9 @@
+         r:command(s, [=[/stopcast]=])
+     end
+     r:delay(s, [=[10]=], [=[!${Me.Casting.ID}]=])
++    -- A held/repeating bard song can keep Casting.ID occupied even after
++    -- castready expires. This existing inter-song pause is a safe AA slot.
++    if Bard.selo(r) then r:delay(s, [=[1]=], [=[]=]) end
+     Bard.beforeSong(r, r:get(s, "nextsong"))
+     r:command(s, [=[/cast ${Me.Gem[${nextsong}]}]=])
+     r:assign(s, [=[castready ${Math.Calc[(${Spell[${nextsong}].MyCastTime.Raw}/100)+5]}]=], false)
+--- a/tests/test.lua
++++ b/tests/test.lua
+@@ -478,12 +478,12 @@
+ bard2.seloNext=0;bard2.seloEffects=nil
+ mock.values['Me.AltAbility[3704].Spell.Name']="Selo's Sonata I"
+ mock.values['Me.AltAbility[3704].Spell.Trigger[1].Name']='Speed Effect'
+-mock.values['Me.BuffDuration[Speed Effect].Raw']='30000'
++mock.values['Me.BuffDuration[=Speed Effect].Raw']='30000'
+ noAction=#mock.commands
+ Bard.selo(bard2)
+ eq(#mock.commands,noAction,'active triggered buff not refreshed')
+ mock.time=mock.time+28000
+-mock.values['Me.BuffDuration[Speed Effect].Raw']='0'
++mock.values['Me.BuffDuration[=Speed Effect].Raw']='0'
+ Bard.selo(bard2)
+ eq(mock.commands[#mock.commands],'/squelch /alt act 3704','expired trigger refreshed')
+ noAction=#mock.commands
+@@ -491,6 +491,62 @@
+ Bard.selo(bard2)
+ eq(#mock.commands,noAction,'Selo request backoff')
+ print('PASS bard trigger-aware speed buff and retry pacing')
++
++-- The rank-II triggered spell may not be learned in the spellbook, so the
++-- Trigger TLO can be NULL even while the real long-duration buff is active.
++local savedSeloValues=mock.values
++mock.values={
++    ['Me.Casting.ID']='0', ['Me.Invis']='FALSE', ['Me.State']='STAND',
++    ['Me.Combat']='TRUE', ['Me.XTarget[1].ID']='999',
++    ["Me.AltAbilityReady[Selo's Sonata]"]='TRUE',
++    ['Me.AltAbilityReady[3704]']='FALSE',
++    ['Me.AltAbility[3704].Spell.Name']="Selo's Sonata II",
++    ["Me.BuffDuration[=Selo's Accelerato].Raw"]='3600000',
++}
++bard2.seloNext=0
++bard2.seloEffects=nil
++noAction=#mock.commands
++eq(Bard.selo(bard2),false,'rank II fallback recognizes one-hour effect')
++eq(#mock.commands,noAction,'no refresh of active long-duration buff')
++assert(bard2.seloNext<=mock.time+5000,'recheck long buff within five seconds')
++mock.time=mock.time+5000
++mock.values["Me.BuffDuration[=Selo's Accelerato].Raw"]='0'
++bard2:set({},'castready','3s')
++eq(Bard.selo(bard2),false,'do not interrupt pending song')
++bard2:set({},'castready',0)
++mock.values['Me.Casting.ID']='100'
++eq(Bard.selo(bard2),false,'do not interrupt casting')
++mock.values['Me.Casting.ID']='0'
++mock.values['Me.Invis']='TRUE'
++eq(Bard.selo(bard2),false,'do not break invisibility')
++mock.values['Me.Invis']='FALSE'
++mock.values['Me.State']='FEIGN'
++eq(Bard.selo(bard2),false,'do not stand during feign')
++mock.values['Me.State']='STAND'
++eq(#mock.commands,noAction,'no AA until safe casting boundary')
++-- Integration: engaged main loop requests the AA before the next song.
++bard2:call('classmainloop')
++eq(mock.commands[#mock.commands],'/squelch /alt act 3704','refresh early-removed buff in combat')
++eq(#mock.commands,noAction+1,'return from update after AA request')
++-- When continuously singing, the song queue already stops the prior song.
++-- Refresh in that existing gap and then resume the planned rotation.
++mock.time=mock.time+15000
++mock.values['Me.Casting.ID']='100'
++mock.values['Me.Gem[Test Song]']='4'
++mock.values['Spell[Test Song].MyCastTime.Raw']='3000'
++local previousCommand=bard2.command
++bard2.command=function(self,scope,line)
++    if line=='/stopcast' then mock.values['Me.Casting.ID']='0' end
++    return previousCommand(self,scope,line)
++end
++local beforeSongCount=#mock.commands
++bard2:call('songqueue','Test Song')
++bard2.command=previousCommand
++eq(mock.commands[beforeSongCount+1],'/stopcast','stop previous song normally')
++eq(mock.commands[beforeSongCount+2],'/squelch /alt act 3704','refresh in inter-song gap')
++eq(mock.commands[beforeSongCount+3],'/cast 4','resume scheduled song')
++mock.values=savedSeloValues
++print('PASS Selo rank fallback, early buff loss, combat refresh and song safety')
+ 
+ -- Monitor emergency tank HP while a non-tank cast is in progress.
+ mock.values['Me.XTarget[1].ID']='99'
