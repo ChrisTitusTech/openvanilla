@@ -196,6 +196,8 @@ heal, and at least one bard group-support AA are ready for present classes.
 `/autolua namedstatus` reports each class's readiness. Ordinary pulls
 remain eligible; named NPCs are not excluded. A monk feigned after a tank
 death also waits for the resurrected tank to regain health and endurance.
+The monk also requests revival of its own dead mercenary during safe
+downtime; it waits for the group mercenary to return before pulling.
 
 ```bash
 patch --dry-run -p1 < "$overlay/named-pull-readiness.patch"

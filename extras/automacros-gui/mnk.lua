@@ -263,6 +263,9 @@ local function groupReady(r)
     local tankEndMin=cfg(r,'PullMinTankEndurance')
     for i=1,math.min(5,num('Group.Members')) do
         local e='Group.Member['..i..']'
+        if yes(e..'.Mercenary') and num(e..'.ID')<=0 then
+            return false,'Waiting for group mercenary revival'
+        end
         if yes(e..'.Offline') or yes(e..'.OtherZone') or num(e..'.ID')<=0 then
             return false,'Waiting for group member to be present'
         end
@@ -1018,6 +1021,16 @@ function M.classmainloop(r)
     end
     maintainCombat(r,s,hostile,assist)
     local engaged=#hostile>0 or read('Me.CombatState')=='COMBAT' or yes('Me.Combat')
+    -- A dead owned mercenary retains a group slot with ID 0. Revive it
+    -- when safely idle instead of blocking all subsequent pulls forever.
+    if not engaged and not assist and read('Mercenary.State')=='DEAD' and
+       not yes('Me.Moving') and not yes('Navigation.Active') and not yes('MoveTo.Moving') and
+       num('Me.Casting.ID')==0 and t>=(s.nextMercRevive or 0) then
+        s.nextMercRevive=t+15000
+        command(r,'/notify MMGW_ManageWnd MMGW_SuspendButton LeftMouseUp')
+        r:log('Monk: Requested revival of own dead mercenary')
+        return
+    end
     -- Stand on incoming aggro before any attempt to fight or feign.
     if (engaged or assist) and s.restOwned and sitting() then
         if t>=(s.nextRestCommand or 0) then
