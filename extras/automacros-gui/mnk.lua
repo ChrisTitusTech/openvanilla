@@ -1,8 +1,9 @@
 -- AutoLua monk: one pull at a time, navigate back to an explicitly set camp.
 local mq = require('mq')
 local shared = require('automacros.shared')
+local Obs = require('automacros.observer')
 local M = {events={}, binds={pullon='bind_pullon', pulloff='bind_pulloff',
-    pullstatus='bind_pullstatus', pullradius='bind_pullradius'}, chat={}}
+    pullstatus='bind_pullstatus', pullradius='bind_pullradius',namedstatus='bind_namedstatus'}, chat={}}
 
 local settings = {
     {'acverbose','int',0}, {'UseMelee','int',1}, {'ReturnToCamp','int',0},
@@ -14,6 +15,7 @@ local settings = {
     {'PullMinHP','int',80}, {'PullMinEndurance','int',50},
     {'PullMinHealerMana','int',50}, {'PullMinTankEndurance','int',30}, {'PullName','string','NULL'},
     {'PullExcludeName','string','NULL'},
+    {'PullRequireNamedDefense','int',1},
     {'MonkUseAbilities','int',1}, {'MonkAutoFD','int',1}, {'MonkEmergencyFDHP','int',50},
 }
 local function read(expr) return mq.parse('${'..expr..'}') end
@@ -213,7 +215,8 @@ local function groupTank()
             local class=read(e..'.Class.ShortName')
             local dist=tonumber(read(e..'.Distance')) or distance(position(spawn(id)),position('Me'))
             if dist<=100 and (id==assigned or class=='WAR' or class=='PAL' or class=='SHD') then
-                local tank={id=id,fighting=yes(e..'.Aggressive') or yes(spawn(id)..'.Aggressive')}
+                local tank={id=id,hp=num(e..'.PctHPs'),endu=tonumber(read(e..'.PctEndurance')),
+                    fighting=yes(e..'.Aggressive') or yes(spawn(id)..'.Aggressive')}
                 if id==assigned then return tank end
                 fallback=fallback or tank
             end
@@ -335,6 +338,30 @@ local function candidateReason(r,s,id)
     end
 end
 local function eligible(r,s,id) return candidateReason(r,s,id)==nil end
+function M.namedPullReady(r,id,diagnostic)
+    if not diagnostic and (cfg(r,'PullRequireNamedDefense')~=1 or not yes(spawn(id)..'.Named')) then return true end
+    local roles={WAR={key='namedWarDefense',query=Obs.warDefenseQuery,label='warrior sustained defense'},
+        CLR={key='namedClrDefense',query=Obs.clrDefenseQuery,label='cleric emergency heal'},
+        BRD={key='namedBrdDefense',query=Obs.brdDefenseQuery,label='bard group support'}}
+    local checked={}
+    local waitReason
+    for i=1,math.min(5,num('Group.Members')) do
+        local e='Group.Member['..i..']';local class=read(e..'.Class.ShortName');local role=roles[class]
+        if role and not checked[class] then
+            checked[class]=true
+            local memberId=num(e..'.ID');local name=read(e..'.Name')
+            Obs.ensure(r,role.key,name,role.query,memberId)
+            local payload=Obs.read(r,role.key)
+            local ready=false
+            if payload then for j=3,#payload-1 do if payload[j]=='TRUE' then ready=true;break end end end
+            if diagnostic then r:log('Named pull readiness class='..class..' member='..name..' ready='..tostring(ready)..' data='..(payload and table.concat(payload,'|') or 'unavailable')) end
+            if not ready and not waitReason then
+                waitReason='Waiting for named pull: '..role.label..(payload and ' cooldown' or ' readiness data')
+            end
+        end
+    end
+    return not waitReason,waitReason
+end
 -- Enumerate loaded spawns directly, rather than depending on NearestSpawn's
 -- 3D radius / ordering. Filter horizontal camp radius and Z independently.
 local function scanIds(r,s)
@@ -383,6 +410,11 @@ local function selectTarget(r,s)
         end
     end
     if best then
+        local ready,reason=M.namedPullReady(r,best)
+        if not ready then
+            s.scanSummary=reason..' ('..tostring(read(spawn(best)..'.CleanName'))..')'
+            return nil
+        end
         s.scanSummary=string.format('Found %d NPCs; selected ID %d (path %.0f)',#ids,best,bestPath)
         return best,bestPath
     end
@@ -685,9 +717,13 @@ local function handleFeign(r,s,hostile,hate)
         else
             local hp=num('Me.PctHPs')
             local healthy=hp>=math.max(60,cfg(r,'MonkEmergencyFDHP')+10)
-            local noTank=p.mode=='camp' and hasGroupTank() and not groupTank()
-            if noTank then status(r,s,'Feigning until the group tank is alive and nearby') end
-            if t-p.downAt<1000 or hate.top or hate.max>=80 or not healthy or noTank or (p.mode=='pull' and p.abortAdds and #hostile>0) then
+            local tank=groupTank()
+            local noTank=p.mode=='camp' and hasGroupTank() and not tank
+            if noTank then p.waitTankRecovery=true end
+            local recoveringTank=p.mode=='camp' and p.waitTankRecovery and tank and
+                (tank.hp<70 or (tank.endu and tank.endu>=0 and tank.endu<20))
+            if noTank or recoveringTank then status(r,s,'Feigning until the group tank is alive and recovered') end
+            if t-p.downAt<1000 or hate.top or hate.max>=80 or not healthy or noTank or recoveringTank or (p.mode=='pull' and p.abortAdds and #hostile>0) then
                 r:logAction('monk-fd-wait','Monk FD waiting: hp='..hp..' aggro='..hate.max..' hostile='..#hostile)
                 return true
             end
@@ -926,6 +962,11 @@ function M.bind_pullradius(r,value)
     else print('[AutoLua] Pull radius must be 50-10000') end
 end
 function M.bind_pullstatus(r) print('[AutoLua] Monk: '..state(r).status) end
+function M.bind_namedstatus(r)
+    local ready,reason=M.namedPullReady(r,nil,true)
+    local msg=ready and 'Named pull defense ready' or reason
+    r:log(msg);print('[AutoLua] '..msg)
+end
 function M.bind_backoff(r)
     r:set({},'AutoPull',0);r:set({},'UseMelee',0);r:set({},'changetoini',1)
     local s=state(r);reset(r,s,'Back off: auto pull and auto melee disabled')
@@ -1120,6 +1161,8 @@ function M.classmainloop(r)
         if not eligible(r,s,s.pullId) or t>=s.deadline or (s.engageDeadline and t>=s.engageDeadline) then
             reject(r,s,'Pull target unavailable, unreachable or timed out');return
         end
+        local namedReady,namedReason=M.namedPullReady(r,s.pullId)
+        if not namedReady then returnHome(r,s,namedReason);return end
         if s.navOwned and yes('Navigation.Active') and not s.engageDeadline and t>=(s.nextRescan or 0) then
             s.nextRescan=t+5000
             local id,path=selectTarget(r,s)

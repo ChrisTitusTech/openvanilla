@@ -30,6 +30,7 @@ local classes = {
         {'PullMinTankEndurance', 'Minimum tank endurance (%)', 'number', 0, 100},
         {'PullName', 'NPC name contains (NULL = any)', 'text'},
         {'PullExcludeName', 'Exclude NPC name (NULL = none)', 'text'},
+        {'PullRequireNamedDefense', 'Wait for named-pull defensive AAs', 'toggle'},
     },
     brd = {
         {'UseSlow', 'Slow', 'toggle'},

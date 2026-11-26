@@ -631,6 +631,10 @@ return function(setup,mock,eq)
     before=#mock.commands;tick(monk,2000)
     assert(not commandsSince(before,'/stand'),'remain feigned when group tank dies even after aggro drops')
     value('Group.Member[1].PctHPs',100)
+    value('Group.Member[1].PctEndurance',0)
+    before=#mock.commands;tick(monk,1000)
+    assert(not commandsSince(before,'/stand'),'remain feigned while newly rezzed tank has no endurance')
+    value('Group.Member[1].PctEndurance',100)
     before=#mock.commands;tick(monk)
     assert(commandsSince(before,'/stand'),'stand once tank has hate')
     value('Me.State','STAND');value('Me.Feigning','FALSE')
@@ -750,6 +754,23 @@ return function(setup,mock,eq)
     eq(monk.monk.phase,'returning','abort crowded tag approach')
     assert(not commandsSince(before,'/alt act 376'),'no point blank tag in a pack')
     assert(monk.monk.rejected[501]>mock.time,'temporarily skip unsafe target')
+    -- Named pull is held until fresh group defensive readiness is known.
+    local Obs=require('automacros.observer');local logic=require('automacros.mnk')
+    local oldEnsure,oldRead=Obs.ensure,Obs.read
+    local responses={}
+    Obs.ensure=function() end;Obs.read=function(_,key) return responses[key] end
+    value('Spawn[id 501].Named','TRUE');value('Group.Members',3)
+    value('Group.Member[1].Class.ShortName','WAR');value('Group.Member[1].ID',10);value('Group.Member[1].Name','Tank')
+    value('Group.Member[2].Class.ShortName','CLR');value('Group.Member[2].ID',11);value('Group.Member[2].Name','Healer')
+    value('Group.Member[3].Class.ShortName','BRD');value('Group.Member[3].ID',12);value('Group.Member[3].Name','Bard')
+    eq(logic.namedPullReady(monk,501),false,'wait for fresh named readiness data')
+    responses.namedWarDefense={'autolua-war-defense','10','FALSE','FALSE','FALSE','FALSE','1'}
+    responses.namedClrDefense={'autolua-clr-defense','11','TRUE','FALSE','1'}
+    responses.namedBrdDefense={'autolua-brd-defense','12','FALSE','TRUE','1'}
+    eq(logic.namedPullReady(monk,501),false,'named held while sustained tank defense cooling down')
+    responses.namedWarDefense[3]='TRUE'
+    eq(logic.namedPullReady(monk,501),true,'named eligible when tank, healer and bard ready')
+    Obs.ensure,Obs.read=oldEnsure,oldRead
     monk:call('onstop')
     print('PASS monk aggro dumps, manual feign preservation, FD confirmation and skill fallback, emergency return recovery')
     print('PASS monk learned ranks, recovery, buffs, DPS, burns, emergency abilities, cooldown confirmation and range gates')

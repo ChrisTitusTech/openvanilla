@@ -189,6 +189,19 @@ patch --dry-run -p1 < "$overlay/hard-encounter-recovery.patch"
 patch -p1 < "$overlay/hard-encounter-recovery.patch"
 ```
 
+Apply `named-pull-readiness.patch` next. **Wait for named-pull defensive
+AAs** uses fresh, identity-checked DanNet observations to hold a named
+pull until the warrior's sustained defense, at least one cleric emergency
+heal, and at least one bard group-support AA are ready for present classes.
+`/autolua namedstatus` reports each class's readiness. Ordinary pulls
+remain eligible; named NPCs are not excluded. A monk feigned after a tank
+death also waits for the resurrected tank to regain health and endurance.
+
+```bash
+patch --dry-run -p1 < "$overlay/named-pull-readiness.patch"
+patch -p1 < "$overlay/named-pull-readiness.patch"
+```
+
 ## Monk AutoLua
 
 The new native Lua class module is selected automatically on a monk by
