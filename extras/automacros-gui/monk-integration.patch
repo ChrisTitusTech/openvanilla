@@ -1,0 +1,41 @@
+--- a/init.lua
++++ b/init.lua
+@@ -4,10 +4,10 @@
+ local R = require('automacros.runtime')
+ local class = (mq.TLO.Me.Class.ShortName() or ''):lower()
+ local name = mq.TLO.Me.CleanName() or 'unknown'
+-local supported = {brd=true,clr=true,war=true}
++local supported = {brd=true,clr=true,war=true,mnk=true}
+ local mode = ...
+ if not supported[class] then
+-    print('[AutoLua] Unsupported class: '..class..'; supported: BRD, CLR, WAR')
++    print('[AutoLua] Unsupported class: '..class..'; supported: BRD, CLR, WAR, MNK')
+     return
+ end
+ if mode == 'probe' then
+@@ -45,6 +45,7 @@
+ -- LuaJIT supports yielding from pcall/xpcall; any unexpected error is logged.
+ local ok,err=xpcall(function() r:call('main') end,debug.traceback)
+ if not ok then
++    if r.funcs.onstop then pcall(function() r:call('onstop') end) end
+     r:log('ERROR '..tostring(err))
+     print('[AutoLua] ERROR '..tostring(err))
+ elseif r.running then
+--- a/runtime.lua
++++ b/runtime.lua
+@@ -313,6 +313,7 @@
+
+ function R:stop()
+     self.running=false
++    if self.funcs.onstop then self:call('onstop') end
+     Obs.dropAll(self)
+     self:log('Stopped')
+     mq.exit()
+--- a/tests/test.lua
++++ b/tests/test.lua
+@@ -879,3 +879,5 @@
+ print('PASS target-specific slow pacing')
+
+ require('automacros.tests.test_gui')(setup,mock,eq)
++
++require('automacros.tests.test_monk')(setup,mock,eq)

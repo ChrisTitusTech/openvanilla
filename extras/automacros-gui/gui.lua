@@ -15,6 +15,15 @@ local common = {
 }
 local classes = {
     war = {},
+    mnk = {
+        {'AutoPull', 'Auto pull', 'toggle'},
+        {'PullRadius', 'Pull radius (units)', 'number', 50, 500},
+        {'PullZRadius', 'Vertical pull radius (units)', 'number', 10, 100},
+        {'PullMinHP', 'Minimum monk/group HP (%)', 'number', 50, 100},
+        {'PullMinEndurance', 'Minimum endurance (%)', 'number', 0, 100},
+        {'PullMinHealerMana', 'Minimum healer mana (%)', 'number', 0, 100},
+        {'PullName', 'NPC name contains (NULL = any)', 'text'},
+    },
     brd = {
         {'UseSlow', 'Slow', 'toggle'},
         {'UseMez', 'Mesmerize', 'toggle'},
@@ -34,7 +43,7 @@ local classes = {
         {'mountitem', 'Mount item', 'text'},
     },
 }
-local names = {war='Warrior', brd='Bard', clr='Cleric'}
+local names = {war='Warrior', brd='Bard', clr='Cleric', mnk='Monk'}
 
 function G.new(r, class)
     local self = setmetatable({r=r, class=class, open=true, ready=false, loaded=false,
@@ -95,10 +104,11 @@ function G:apply(key, value)
                 end
             end
         elseif field[3]=='text' then
-            -- Keep item names literal through the existing MQ INI adapter.
+            if key=='PullName' and value=='' then value='NULL' end
+            -- Keep names literal through the existing MQ INI adapter.
             if type(value)~='string' or #value>200 or not value:match('^[%w %p]+$')
                 or value:find('["$;{}%[%],\\]') or not value:match('%S') then
-                self.message='Enter an item name without command or INI delimiters.'
+                self.message='Enter a name without command or INI delimiters.'
                 return
             end
             r:set({},key,value)
@@ -210,7 +220,12 @@ function G:draw(imgui)
                 imgui.Separator()
                 imgui.Text(names[self.class]..' settings')
                 for _,field in ipairs(classes[self.class]) do self:drawField(imgui,field) end
-                imgui.TextWrapped('Bring your own spells applies to spell setup on restart.')
+                if self.class=='mnk' then
+                    imgui.TextWrapped(self.r.monk and self.r.monk.status or 'Set camp here first.')
+                    imgui.TextWrapped('Set camp here, then enable Auto pull. MQ2Nav needs a loaded zone mesh.')
+                else
+                    imgui.TextWrapped('Bring your own spells applies to spell setup on restart.')
+                end
                 if self.class=='clr' then
                     imgui.Text('Quiet Miracle target ID: '..tostring(self.r:get({},'qmtarget') or 0))
                     if imgui.Button('Set Quiet Miracle target') then self:queue('quietTarget') end
