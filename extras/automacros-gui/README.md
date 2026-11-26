@@ -101,6 +101,8 @@ The clicky check uses its actual cast time plus a safety allowance.
 `bard-recovery.patch` additionally schedules Crescendo only for real
 group health, mana or endurance deficits, after protecting the core
 song deadlines. Non-mana classes do not count as mana deficits.
+`bard-recovered-stand.patch` makes a fully recovered bard stand and
+resume core songs without waiting for a new encounter.
 
 From the installed `lua/automacros` directory, apply the patch once:
 
@@ -109,6 +111,8 @@ patch --dry-run -p1 < "$overlay/bard-priority.patch"
 patch -p1 < "$overlay/bard-priority.patch"
 patch --dry-run -p1 < "$overlay/bard-recovery.patch"
 patch -p1 < "$overlay/bard-recovery.patch"
+patch --dry-run -p1 < "$overlay/bard-recovered-stand.patch"
+patch -p1 < "$overlay/bard-recovered-stand.patch"
 ```
 
 Run the offline tests and restart the bard while the group is idle.

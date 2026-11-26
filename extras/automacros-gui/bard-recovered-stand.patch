@@ -1,0 +1,71 @@
+--- a/bard.lua
++++ b/bard.lua
+@@ -98,6 +98,21 @@
+ function M.scheduleCombat(r,downtime)
+     if (r:get({},'castready') or 0)>0 then return false end
+     local now=mq.gettime()
++    if read(r,'Me.Stunned')=='TRUE' or read(r,'Me.State')=='STUN' then return false end
++    if downtime and read(r,'Me.Sitting')=='TRUE' then
++        -- The legacy sitcheck only stands on movement or combat; when
++        -- recovery completes at camp, stand so core support can resume.
++        if num(r,'Me.PctHPs')>=90 and num(r,'Me.PctMana')>80 and num(r,'Me.PctEndurance')>80
++            and now>=(r.bardStandAt or 0) then
++            r.bardStandAt=now+500
++            r:set({},'enablesit',0)
++            r:command({},'/stand')
++            r:log('Bard recovered; standing to maintain core songs')
++            return true
++        end
++        return false
++    end
++    if downtime and read(r,'Me.Standing')~='TRUE' then return false end
+     r.songAttempts=r.songAttempts or {}
+     local slow=r:get({},'slowsong')
+     local targetId=num(r,'Target.ID')
+--- a/brd.lua
++++ b/brd.lua
+@@ -184,7 +184,7 @@
+     -- Out of Combat
+     if r:condition(s, [=[!${Spell[${Me.Aura[1]}].ID} && !${Me.Moving} && !${Me.Invis} && !${Me.Sitting} && ${Me.State.NotEqual[FEIGN]}&&${castready}==0&&!${Me.Combat}&&${Me.XTarget}==0&&${Me.Gem[${aurasong}]}]=]) then
+         r:invoke(s, [=[songqueue]=], [=["${aurasong}"]=])
+-    elseif r:condition(s, [=[!${Me.Moving}&&!${Me.Invis}&&${Me.Standing}&&${Me.State.NotEqual[FEIGN]}&&${castready}==0&&!${Me.Combat}&&${Me.XTarget}==0]=]) then
++    elseif r:condition(s, [=[!${Me.Moving}&&!${Me.Invis}&&${Me.State.NotEqual[FEIGN]}&&${castready}==0&&!${Me.Combat}&&${Me.XTarget}==0]=]) then
+         Bard.scheduleCombat(r,true)
+     end
+     do return nil end
+--- a/tests/test.lua
++++ b/tests/test.lua
+@@ -931,6 +931,33 @@
+ rotation:set({},'regensong','NULL')
+ print('PASS bard actual group resource recovery with core-song priority')
+
++-- A bard who finished resting must stand and resume core support
++-- even without a new encounter; do not stand before recovery is sufficient.
++local savedStandValues=mock.values
++mock.values={}
++for k,v in pairs(savedStandValues) do mock.values[k]=v end
++mock.values['Me.Sitting']='TRUE';mock.values['Me.Standing']='FALSE';mock.values['Me.State']='SIT'
++mock.values['Me.PctHPs']='100';mock.values['Me.PctMana']='100';mock.values['Me.PctEndurance']='50'
++rotation.bardStandAt=0
++local standCommands=#mock.commands
++rotation:call('downtimesongs')
++eq(#mock.commands,standCommands,'remain seated with low endurance')
++mock.values['Me.PctEndurance']='100'
++rotation:set({},'enablesit',1)
++rotation:call('downtimesongs')
++eq(mock.commands[#mock.commands],'/stand','stand after recovering without waiting for enemy')
++eq(rotation:get({},'enablesit'),0,'clear legacy sit request')
++standCommands=#mock.commands
++rotation:call('downtimesongs')
++eq(#mock.commands,standCommands,'avoid repeated stand while awaiting confirmation')
++mock.values['Me.Sitting']='FALSE';mock.values['Me.Standing']='TRUE';mock.values['Me.State']='STAND'
++mock.values['Me.BuffDuration[Aria].Raw']='0'
++rotation.songAttempts={}
++rotation:call('downtimesongs')
++eq(selected,'Aria','resume core song after standing')
++mock.values=savedStandValues;rotation.songAttempts={}
++print('PASS bard leaves recovered sitting state and resumes core buffs')
++
+ -- Target slow is not repeated on the same target just because cached
+ -- data has not populated, while a genuinely new target can be slowed.
+ rotation:set({},'UseSlow',1)
