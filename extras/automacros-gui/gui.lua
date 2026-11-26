@@ -125,6 +125,10 @@ function G:apply(key, value)
         end
     elseif key=='campHere' then
         r:call('bind_togglevariable','ReturnToCamp','1')
+    elseif key=='groupCampHere' then
+        r:dispatch('groupcamphere')
+    elseif key=='groupCampOff' then
+        r:dispatch('groupcampoff')
     elseif key=='followTarget' then
         if not r:condition({},'${Target.Type.Equal[PC]} && ${Target.ID} != ${Me.ID}') then
             self.message='Select another player before following.'
@@ -217,12 +221,19 @@ function G:draw(imgui)
             if follow=='NULLNULLNULLNULLNULL' or follow=='NULL' then follow='None' end
             imgui.Separator()
             imgui.Text('Movement | Following: '..follow)
+            if self.r:get({},'ReturnToCamp')==1 then
+                imgui.Text(string.format('Camp Y %.1f X %.1f Z %.1f', self.r:get({},'AutoCampY') or 0,
+                    self.r:get({},'AutoCampX') or 0, self.r:get({},'AutoCampZ') or 0))
+            end
             if imgui.Button('Set camp here') then self:queue('campHere') end
             imgui.SameLine()
             if imgui.Button('Follow target') then self:queue('followTarget') end
             imgui.SameLine()
             if imgui.Button('Stop following') then self:queue('stopFollow') end
             if imgui.Button('Back off') then self:queue('backoff') end
+            if imgui.Button('Set group camp here') then self:queue('groupCampHere') end
+            imgui.SameLine()
+            if imgui.Button('Group camp off') then self:queue('groupCampOff') end
             if self.class~='war' then
                 imgui.Separator()
                 imgui.Text(names[self.class]..' settings')

@@ -122,6 +122,12 @@ local function rememberCamp(r,s)
     r:set({},'ChaseAssist',0)
     status(r,s,string.format('Camp set at %.1f, %.1f, %.1f',p.y,p.x,p.z))
 end
+function M.applycampanchor(r,y,x,z,zone)
+    local s=state(r)
+    reset(r,s)
+    s.camp={x=x,y=y,z=z,zone=zone};s.rejected={}
+    status(r,s,string.format('Camp set at %.3f, %.3f, %.3f',y,x,z))
+end
 local function campDistance(s) return distance(position('Me'),s.camp) end
 -- NPCs can stop a few units beyond the camp boundary when the tank catches
 -- them. A small combat-only margin avoids leaving the tank fighting alone.

@@ -142,6 +142,35 @@ patch --dry-run -p1 < "$overlay/cleric-priority-aa.patch"
 patch -p1 < "$overlay/cleric-priority-aa.patch"
 ```
 
+## Shared group camp coordinates
+
+`group-camp.patch` and `camp.lua` add an exact, zone-scoped Y/X/Z camp
+anchor to all four classes. On a safe idle group, restart the scripts and
+broadcast one set of coordinates from any game client:
+
+```text
+/dgga /autolua stop
+/dgga /lua run automacros
+/dgga /autolua campcoords <Y> <X> <Z> [zone ID]
+/dgga /autolua campstatus
+```
+
+Wait for all clients to finish initialization before setting the coordinates.
+The **Set group camp here** GUI button broadcasts the current character's
+coordinates and zone ID; **Group camp off** disables all members' camps.
+Local **Set camp here** remains independent. If a coordinate update arrives
+during combat it is deferred until safe. A combat stick no longer disables
+the camp, and the warrior, cleric and bard return with XYZ-aware navigation
+when outside their camp radii. Camp anchors are session-scoped.
+
+From the installed `lua/automacros` directory, after the other patches:
+
+```bash
+patch --dry-run -p1 < "$overlay/group-camp.patch"
+patch -p1 < "$overlay/group-camp.patch"
+cp "$overlay/camp.lua" camp.lua
+```
+
 ## Monk AutoLua
 
 The new native Lua class module is selected automatically on a monk by

@@ -1,0 +1,169 @@
+--- a/runtime.lua
++++ b/runtime.lua
+@@ -3,6 +3,7 @@
+ -- game TLOs and arithmetic, preserving the original spell-selection semantics.
+ local mq = require('mq')
+ local Obs = require('automacros.observer')
++local Camp = require('automacros.camp')
+ local calculate = require('automacros.expression')
+ local R = {}
+ R.__index = R
+@@ -244,6 +245,7 @@
+ function R:call(name,...)
+     local key=name:lower()
+     local f=assert(self.funcs[key],'Missing routine '..name)
++    if key=='classmainloop' then Camp.beforePulse(self) end
+     local startup=self.gui and not self.gui.ready and startupPhases[key]
+     if startup then self.gui:setPhase(startup) end
+     local cast=name:lower()=='autocastmemorized'
+@@ -313,6 +315,7 @@
+
+ function R:stop()
+     self.running=false
++    Camp.stop(self)
+     if self.funcs.onstop then self:call('onstop') end
+     Obs.dropAll(self)
+     self:log('Stopped')
+@@ -413,6 +416,9 @@
+         error('Unconverted macro command: '..expanded)
+     else
+         local action=expanded:gsub('^/squelch%s+','')
++        if action:match('^/stick%s') then
++            self.campStickOwned=not action:match('^/stick%s+off%s*$')
++        end
+         if action:match('^/cast%s') or action:match('^/casting%s') or action:match('^/disc%s') or
+            action:match('^/alt%s+act%s') or action:match('^/doability%s') or action:match('^/useitem%s') then
+             self.counts.castRequests=self.counts.castRequests+1
+--- a/shared.lua
++++ b/shared.lua
+@@ -1,5 +1,6 @@
+ -- Generated from auto_subs.inc; original class selections retained.
+ -- Native Lua functions, branches and loops with a shared MQ TLO adapter.
++local Camp=require('automacros.camp')
+ local M = {}
+ M.events = {}
+ M.binds = {}
+@@ -14,6 +15,14 @@
+ M.binds[ [=[campfire]=] ] = [=[bind_campfire]=]
+ M.binds[ [=[changevarint]=] ] = [=[bind_changevarint]=]
+ M.binds[ [=[togglevariable]=] ] = [=[bind_togglevariable]=]
++M.binds.campcoords='bind_campcoords'
++M.binds.campstatus='bind_campstatus'
++M.binds.groupcamphere='bind_groupcamphere'
++M.binds.groupcampoff='bind_groupcampoff'
++function M.bind_campcoords(r,...) return Camp.request(r,...) end
++function M.bind_campstatus(r) Camp.status(r) end
++function M.bind_groupcamphere(r) Camp.groupHere(r) end
++function M.bind_groupcampoff(r) r:command({},'/dggaexecute /autolua campoff') end
+ function M.aliassetup(r, ...)
+     local s = r:frame({}, ...)
+     r:command(s, [=[/squelch /alias /camphere       /togglevariable ReturnToCamp]=])
+@@ -42,8 +51,10 @@
+     r:declare(s, [=[enablesit		int outer 0]=])
+     r:declare(s, [=[ReturnToCamp	int outer 0]=])
+     r:declare(s, [=[AutoCampRadius	int outer 30]=])
+-    r:declare(s, [=[AutoCampX		int outer ${Me.X}]=])
+-    r:declare(s, [=[AutoCampY		int outer ${Me.Y}]=])
++    r:declare(s, [=[AutoCampX		float outer ${Me.X}]=])
++    r:declare(s, [=[AutoCampY		float outer ${Me.Y}]=])
++    r:declare(s, [=[AutoCampZ		float outer ${Me.Z}]=])
++    r:declare(s, [=[AutoCampZone	int outer ${Zone.ID}]=])
+     r:declare(s, [=[changetoini	int outer 0]=])
+     r:declare(s, [=[targetcleartimer	timer outer 0]=])
+     r:declare(s, [=[numoftargets	int outer 0]=])
+@@ -140,11 +151,11 @@
+         if r:condition(s, [=[${Command.Equal[ReturnToCamp]} && ${OnOff.Equal[on]} ]=]) then
+             r:command(s, [=[/echo Camp turned ON]=])
+             r:command(s, [=[/docommand /varset ReturnToCamp 1]=])
+-            r:command(s, [=[/docommand /varset AutoCampX ${Me.X}]=])
+-            r:command(s, [=[/docommand /varset AutoCampY ${Me.Y}]=])
++            Camp.capture(r)
+         elseif r:condition(s, [=[${Command.Equal[ReturnToCamp]} && ${OnOff.Equal[off]}]=]) then
+             r:command(s, [=[/echo Turning ALL Camp settings to OFF]=])
+             r:command(s, [=[/docommand /varset ReturnToCamp 0]=])
++            r.pendingCamp=nil;Camp.stop(r)
+         end
+         -- Chase Toon Toggle
+         if r:condition(s, [=[${Command.Equal[ChaseAssist]} && ${OnOff.Equal[on]} &&${Target.Type.Equal[PC]}]=]) then
+@@ -348,27 +359,7 @@
+ end
+
+ function M.autocampcheck(r, ...)
+-    local s = r:frame({}, ...)
+-    -- ----Camp Return Logic
+-    if r:condition(s, [=[${Spawn[${FollowToonName}].ID}&&(!${Me.Casting.ID})&&!${MoveTo.Moving}&&${ReturnToCamp}==1]=]) then
+-        r:assign(s, [=[ReturnToCamp 0]=], false)
+-        r:command(s, [=[/echo FollowToon Detected - Disabling Camp]=])
+-    elseif r:condition(s, [=[${Stick.Status.Equal[ON]}&&${ReturnToCamp}==1]=]) then
+-        r:assign(s, [=[ReturnToCamp 0]=], false)
+-        r:command(s, [=[/echo Stick Detected - Disabling Camp]=])
+-    elseif r:condition(s, [=[${AdvPath.Following}&&${ReturnToCamp}==1]=]) then
+-        r:assign(s, [=[ReturnToCamp 0]=], false)
+-        r:command(s, [=[/echo AdvPath Follow Detected - Disabling Camp]=])
+-    elseif r:condition(s, [=[!${Spawn[${FollowToonName}].ID}&&${Stick.Status.Equal[OFF]} && !${Me.Casting.ID} && ${Math.Distance[${Me.Y},${Me.X}:${AutoCampY},${AutoCampX}]}>${AutoCampRadius} && (${Math.Distance[${Me.Y},${Me.X}:${AutoCampY},${AutoCampX}]}<400) && !${MoveTo.Moving} && ${ReturnToCamp}==1]=]) then
+-        r:command(s, [=[/moveto loc ${AutoCampY} ${AutoCampX}]=])
+-        ::movinghome::
+-        r:delay(s, [=[5]=], [=[]=])
+-        if r:condition(s, [=[(${Math.Distance[${Me.Y},${Me.X}:${AutoCampY},${AutoCampX}]}>20)&&(${MoveTo.Moving})]=]) then
+-            goto movinghome
+-        end
+-        r:command(s, [=[/moveto off]=])
+-    end
+-    do return nil end
++    Camp.returnTick(r)
+     -- ----------------------------------------------------------------------------
+     -- SUB: BagModRods
+     -- ----------------------------------------------------------------------------
+--- a/tests/test.lua
++++ b/tests/test.lua
+@@ -1069,6 +1069,50 @@
+ eq(bardAA[1],'361','Shield of Notes')
+ print('PASS bard AA named/three-plus gates, core deadlines and low-health defense')
+
++-- Exact group camp anchors use the same command on every class, survive
++-- normal combat stick movement, and return with Z-aware navigation.
++local savedCampValues=mock.values
++mock.values={['Zone.ID']='101',['Me.X']='-1764.875',['Me.Y']='-1734.125',['Me.Z']='5.25',
++    ['Me.XTarget[1].ID']='0',['Me.XTarget']='0',['Me.Combat']='FALSE',
++    ['Me.Casting.ID']='0',['Stick.Status']='OFF',['Navigation.MeshLoaded']='TRUE'}
++local Camp=require('automacros.camp')
++local campWar
++for _,class in ipairs({'clr','brd','war','mnk'}) do
++    local r=setup(class)
++    r:dispatch('campcoords','-1734.125','-1764.875','5.25','101')
++    eq(r:get({},'AutoCampY'),-1734.125,class..' exact Y')
++    eq(r:get({},'AutoCampX'),-1764.875,class..' exact X')
++    eq(r:get({},'AutoCampZ'),5.25,class..' exact Z')
++    eq(r:get({},'ReturnToCamp'),1,class..' group camp enabled')
++    if class=='mnk' then
++        eq(r.monk.camp.x,-1764.875,'monk pull anchor matches common X')
++        eq(r.monk.camp.y,-1734.125,'monk pull anchor matches common Y')
++        eq(r.monk.camp.z,5.25,'monk pull anchor matches common Z')
++    elseif class=='war' then campWar=r end
++end
++campWar:dispatch('groupcamphere')
++eq(mock.commands[#mock.commands],'/dggaexecute /autolua campcoords -1734.125 -1764.875 5.250 101','group broadcast exact coordinates')
++eq(Camp.request(campWar,0,0,0,102),false,'do not apply coordinates from another zone')
++mock.values['Me.XTarget[1].ID']='99'
++Camp.request(campWar,-1735,-1765,6,101)
++eq(campWar:get({},'AutoCampY'),-1734.125,'defer camp changes while fighting')
++mock.values['Me.XTarget[1].ID']='0'
++Camp.beforePulse(campWar)
++eq(campWar:get({},'AutoCampY'),-1735,'apply queued anchor after combat')
++mock.values['Me.Y']='-1635'
++mock.values['Stick.Status']='ON';campWar.campStickOwned=true
++campWar:call('autocampcheck')
++eq(mock.commands[#mock.commands],'/stick off','release old combat stick without disabling camp')
++eq(campWar:get({},'ReturnToCamp'),1,'camp remains enabled after combat')
++mock.values['Stick.Status']='OFF';mock.values['Stick.Active']='FALSE'
++campWar:call('autocampcheck')
++eq(mock.commands[#mock.commands],'/nav loc -1735.000 -1765.000 6.000 distance=5','return to shared XYZ anchor')
++mock.values['Me.XTarget[1].ID']='99'
++Camp.beforePulse(campWar)
++eq(mock.commands[#mock.commands],'/nav stop','combat interrupts owned camp return')
++mock.values=savedCampValues
++print('PASS four-class group XYZ camp, broadcast, safe deferred changes and owned movement')
++
+ require('automacros.tests.test_gui')(setup,mock,eq)
+
+ require('automacros.tests.test_monk')(setup,mock,eq)
