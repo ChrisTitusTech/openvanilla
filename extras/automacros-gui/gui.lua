@@ -29,6 +29,7 @@ local classes = {
         {'PullMinHealerMana', 'Minimum healer mana (%)', 'number', 0, 100},
         {'PullMinTankEndurance', 'Minimum tank endurance (%)', 'number', 0, 100},
         {'PullName', 'NPC name contains (NULL = any)', 'text'},
+        {'PullExcludeName', 'Exclude NPC name (NULL = none)', 'text'},
     },
     brd = {
         {'UseSlow', 'Slow', 'toggle'},

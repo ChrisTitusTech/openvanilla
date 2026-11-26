@@ -13,6 +13,7 @@ local settings = {
     {'PullMaxPath','int',1000}, {'PullTimeout','int',15},
     {'PullMinHP','int',80}, {'PullMinEndurance','int',50},
     {'PullMinHealerMana','int',50}, {'PullMinTankEndurance','int',30}, {'PullName','string','NULL'},
+    {'PullExcludeName','string','NULL'},
     {'MonkUseAbilities','int',1}, {'MonkAutoFD','int',1}, {'MonkEmergencyFDHP','int',50},
 }
 local function read(expr) return mq.parse('${'..expr..'}') end
@@ -284,8 +285,13 @@ local function candidateReason(r,s,id)
     local class=num(e..'.Class.ID')
     if class>16 then return 'service class' end
     local filter=cfg(r,'PullName') or ''
-    if filter~='' and filter:lower()~='null' and not tostring(read(e..'.CleanName') or ''):lower():find(filter:lower(),1,true) then
+    local name=tostring(read(e..'.CleanName') or ''):lower()
+    if filter~='' and filter:lower()~='null' and not name:find(filter:lower(),1,true) then
         return 'name filter'
+    end
+    local excluded=cfg(r,'PullExcludeName') or ''
+    if excluded~='' and excluded:lower()~='null' and name:find(excluded:lower(),1,true) then
+        return 'excluded name'
     end
 end
 local function eligible(r,s,id) return candidateReason(r,s,id)==nil end

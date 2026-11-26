@@ -124,7 +124,8 @@ The new native Lua class module is selected automatically on a monk by
 
 1. Move the monk to the desired camp with the group and click
    **Set camp here** (or use `/autolua camphere`).
-2. On the monk's GUI, optionally enter the NPC name substring and adjust
+2. On the monk's GUI, optionally enter an NPC name substring to include or
+   exclude (`NULL` disables the corresponding filter) and adjust
    the pull radius (default 350 units) and camp radius (default 30 units).
 3. Enable **Auto pull**, or run `/autolua pullon`.
 
@@ -133,7 +134,8 @@ each script session or zone change. A loaded MQ2Nav zone mesh is required.
 The monk enumerates loaded NPCs through the native MQ Lua spawn API.
 Horizontal camp radius and vertical radius (default 90) are independent.
 Living, targetable non-pet NPCs are filtered for special service classes,
-encounter locks, trap NPCs and the optional literal name substring. Unknown or
+encounter locks, trap NPCs and optional literal name substrings. The exclusion
+applies only to new pulls; hostile mobs at camp remain valid combat targets. Unknown or
 partial NPC HP does not disqualify a living pull candidate. Valid targets
 are ranked by actual MQ2Nav path length, subject to a maximum path
 distance (default 1000). The GUI and log report candidate counts and

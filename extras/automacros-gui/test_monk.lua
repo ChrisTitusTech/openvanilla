@@ -114,7 +114,7 @@ return function(setup,mock,eq)
     r.gui:queue('MonkEmergencyFDHP',50);r:pump()
 
     -- Nearest merchant and wrong name are rejected; next reachable mob is chosen.
-    local candidates={100,101,102,104,103,105,106,107,109}
+    local candidates={100,101,102,104,103,105,106,107,109,110}
     mob(100,'goblin merchant',105,200,5,true,41)
     mob(101,'an orc',110,200,5,true)
     mob(102,'a goblin',150,200,5,false);value('Navigation.PathExists[id 102]','FALSE')
@@ -128,6 +128,9 @@ return function(setup,mock,eq)
     value('Navigation.PathLength[id 106]',40)
     mob(107,'a goblin far path',145,200,5,true);value('Navigation.PathLength[id 107]',1200)
     mob(109,'a goblin trap',102,200,5,true);value('Navigation.PathLength[id 109]',2)
+    mob(110,'a goblin lacerator',104,200,5,true);value('Navigation.PathLength[id 110]',4)
+    r.gui:queue('PullExcludeName','LACERATOR');r:pump()
+    eq(mock.ini['General/PullExcludeName'],'LACERATOR','excluded name saved')
     value('Group.Member[2].PctMana',20)
     before=#mock.commands;tick(r,2000)
     eq(r.monk.status,'Waiting for healer mana','healer mana gate')
@@ -158,10 +161,12 @@ return function(setup,mock,eq)
         and r.monk.status:find('encounter locked=1',1,true) and r.monk.status:find('path too long=1',1,true)
         and r.monk.status:find('trap=1',1,true),
         'rejected candidates diagnosed: '..r.monk.status)
+    assert(r.monk.status:find('excluded name=1',1,true),'excluded name diagnosis')
     value('Navigation.PathExists[id 103]','TRUE');value('Navigation.PathLength[id 103]',90)
     value('Navigation.PathExists[id 104]','TRUE');value('Navigation.PathLength[id 104]',200)
     tick(r,2000)
     eq(r.monk.pullId,103,'shortest path wins even if another NPC is closer geographically')
+    table.remove(candidates) -- subsequent scenarios do not include the lacerator
     eq(r.monk.phase,'outbound','begin pull')
     eq(mock.values['Melee.Enable'],'FALSE','plugin remains off before leaving camp')
     before=#mock.commands;tick(r)
