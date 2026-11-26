@@ -219,15 +219,19 @@ own tags, so on a 2560x1440 + 1920x1080 setup with a 30px bar, tag 3 gets
 GS_RES="2560x1410 1920x1050 1920x1050 1920x1050" tools/linux/mq-launch.sh
 ```
 
-`GAMESCOPE=1` runs each client inside its own nested
+Each client runs inside its own nested
 [gamescope](https://github.com/ValveSoftware/gamescope) at that size, so
 EverQuest never sees a resize or focus loss. `GS_ARGS` defaults to
-`--force-grab-cursor`. It is off by default. On an RTX 4070 SUPER with
-NVIDIA 620.70, starting a second nested gamescope while a client was
-running faulted the GPU (`Xid 51 BAD_TSG`, then `NV_ERR_RESET_REQUIRED` in
-`journalctl -k`), and a reboot was needed. After that fault every Vulkan or
-GL program fails, including gamescope (`vkCreateDevice failed (VkResult:
--3)`) and the Quickshell panel.
+`--force-grab-cursor`; set `GAMESCOPE=0` to run plain Proton. The launcher
+starts gamescope under `setpriv --no-new-privs`, which drops its file
+`CAP_SYS_NICE` (gamescope logs "No CAP_SYS_NICE, falling back to
+regular-priority"). On NVIDIA, two gamescopes that both use realtime Vulkan
+queues fault the GPU (`Xid 51 BAD_TSG`, then `NV_ERR_RESET_REQUIRED` in
+`journalctl -k`; see
+[ublue-os/bazzite#6089](https://github.com/ublue-os/bazzite/issues/6089)).
+After that fault every new Vulkan or GL program fails, including gamescope
+(`vkCreateDevice failed (VkResult: -3)`) and the Quickshell panel, until you
+reboot.
 
 Wine tray icons use the X11 XEmbed protocol. Panels that only host
 StatusNotifierItem icons (Quickshell, Waybar) need a bridge, or the

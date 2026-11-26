@@ -14,8 +14,7 @@
 #                   or one per TAGS entry, each WxH or "auto" = the tag's monitor minus
 #                   dock/panel bars along its edges (default: auto)
 #   GAMESCOPE       1 = run each client in its own nested gamescope (client always sees
-#                   itself focused); 0 = plain Proton (default: 0; on NVIDIA 620 a
-#                   second nested gamescope faulted the GPU, Xid 51)
+#                   itself focused); 0 = plain Proton (default: 1)
 #   GS_ARGS         extra gamescope arguments (default: "--force-grab-cursor"; "" = none)
 set -euo pipefail
 
@@ -28,7 +27,7 @@ eq_dir="${EQ_DIR:-$steam/steamapps/common/Everquest F2P}"
 mq_dir="${MQ_DIR:-$repo/build/linux-x64/bin/release}"
 launch_delay="${LAUNCH_DELAY:-2}"
 window_timeout="${WINDOW_TIMEOUT:-180}"
-use_gamescope="${GAMESCOPE:-0}"
+use_gamescope="${GAMESCOPE:-1}"
 read -r -a gs_res <<<"${GS_RES:-auto}"
 read -r -a gs_args <<<"${GS_ARGS---force-grab-cursor}"
 
@@ -122,7 +121,9 @@ set_eq_video() {
 }
 
 if [[ "$use_gamescope" == 1 ]]; then
-    command -v gamescope >/dev/null || die "missing gamescope (set GAMESCOPE=0 to run without it)"
+    for tool in gamescope setpriv; do
+        command -v "$tool" >/dev/null || die "missing $tool (set GAMESCOPE=0 to run without gamescope)"
+    done
 fi
 (( ${#gs_res[@]} == 1 || ${#gs_res[@]} == ${#tags[@]} )) \
     || die "GS_RES has ${#gs_res[@]} entries but TAGS has ${#tags[@]} (use one value or one per tag)"
@@ -201,7 +202,9 @@ for tag in "${tags[@]}"; do
     if [[ "$use_gamescope" == 1 ]]; then
         # Fixed inner (-w/-h) and outer (-W/-H) size; dwm may resize the outer window,
         # gamescope scales, and EQ never sees a mode change or focus loss.
-        (cd "$eq_dir" && exec gamescope -w "$gs_w" -h "$gs_h" -W "$gs_w" -H "$gs_h" "${gs_args[@]}" \
+        # no_new_privs drops gamescope's file CAP_SYS_NICE: two gamescopes with
+        # realtime Vulkan queues fault NVIDIA GPUs (Xid 51 BAD_TSG; ublue-os/bazzite#6089).
+        (cd "$eq_dir" && exec setpriv --no-new-privs gamescope -w "$gs_w" -h "$gs_h" -W "$gs_w" -H "$gs_h" "${gs_args[@]}" \
             -- "$proton" run "$eq_dir/eqgame.exe" "${args[@]}") >/dev/null 2>&1 &
     else
         (cd "$eq_dir" && exec "$proton" run "$eq_dir/eqgame.exe" "${args[@]}") >/dev/null 2>&1 &
