@@ -174,9 +174,13 @@ confirmed ability. Automatic FD is limited to aggro dumps and emergency
 survival. No forced target movement, area damage, veteran AA or
 equipment clicky rotation is enabled.
 
-The next pull waits for
-combat to finish and for
-monk/group health (default 80%), endurance (50%) and healer mana (50%).
+The next pull waits for combat to finish and for monk/group health
+(default 80%), endurance (50%) and healer mana (50%). During safe
+downtime the monk uses available endurance recovery, respects the
+learned recovery discipline's activation cap (Breather Rk. III: 29%),
+and sits until its configured health/endurance requirements are met.
+The GUI status displays recovery progress; the monk stands for incoming
+combat or when ready to resume pulling.
 If the group starts fighting or falls below readiness during approach,
 the monk returns to camp. Failed/unreachable targets are skipped for
 30 seconds. This is single-pull automation; it does not implement
@@ -201,7 +205,7 @@ For an already-installed GUI/Selo overlay, apply only
 offline suite exercises the pull cycle, 3D camp coordinates, group
 readiness, native spawn enumeration, path ranking, AA activation and
 retry, rescan, trap rejection, early navigation arrival, aggro dump and emergency feign recovery, plugin suspension/restoration, multi-target
-camp combat, learned-rank selection, ability recovery, burn coordination, mob-arrival wait, GUI persistence, timeout, cancellation,
+camp combat, learned-rank selection, capped endurance recovery, sit/resume, burn coordination, mob-arrival wait, GUI persistence, timeout, cancellation,
 and zone invalidation. Existing character INI settings are preserved
 when upgrading; the new path limit and timeout are initialized on first
 run. Live pathing and ability activation still need verification in the

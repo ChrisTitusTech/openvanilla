@@ -97,7 +97,7 @@ end
 local function reset(r,s,message)
     stopNav(r,s);stopCombat(r,s)
     s.phase='idle';s.pullId=nil;s.pullName=nil;s.nextPull=now()+1000
-    s.action=nil;s.engageDeadline=nil;s.approachLimit=nil;s.navApproachRange=nil;s.waitMobId=nil;s.pausedAt=nil;s.feign=nil
+    s.action=nil;s.engageDeadline=nil;s.approachLimit=nil;s.navApproachRange=nil;s.waitMobId=nil;s.pausedAt=nil;s.feign=nil;s.restOwned=nil;s.nextRestCommand=nil
     if message then status(r,s,message) end
 end
 local function invalidateCamp(r,s,message)
@@ -210,7 +210,10 @@ local function groupTank()
 end
 local function groupReady(r)
     if num('Me.PctHPs')<cfg(r,'PullMinHP') then return false,'Waiting for monk health' end
-    if num('Me.PctEndurance')<cfg(r,'PullMinEndurance') then return false,'Waiting for endurance' end
+    local endu=num('Me.PctEndurance')
+    if endu<cfg(r,'PullMinEndurance') then
+        return false,string.format('Waiting for endurance (%d%% / %d%% required)',endu,cfg(r,'PullMinEndurance'))
+    end
     local manaMin=cfg(r,'PullMinHealerMana')
     for i=1,math.min(5,num('Group.Members')) do
         local e='Group.Member['..i..']'
@@ -449,7 +452,13 @@ local function discoverAbilities(r,s)
                         cost=num('Spell['..name..'].EnduranceCost'),
                         cast=num('Spell['..name..'].MyCastTime.Raw'),
                         trigger=read('Spell['..name..'].Trigger[1].Name')}
-                    summary[#summary+1]=family..'='..name
+                    if family=='recovery' or family=='combatRecovery' then
+                        -- The recovery line's third effect is its endurance
+                        -- activation cap (Dantea's Breather III is 29%).
+                        local cap=num('Spell['..name..'].Base[3]')
+                        disc[family].enduCap=(cap>0 and cap<=100) and cap or 15
+                    end
+                    summary[#summary+1]=family..'='..name..(disc[family].enduCap and ' (endurance cap '..disc[family].enduCap..'%)' or '')
                 end
             end
         end
@@ -508,6 +517,7 @@ local function useAbility(r,s,a,options)
     options=options or {}
     if (a.cast or 0)>0 and (yes('Me.Moving') or options.instant) then return false end
     if a.cost and a.cost>0 and num('Me.CurrentEndurance')<a.cost then return false end
+    if a.enduCap and num('Me.PctEndurance')>a.enduCap then return false end
     if options.slot and discActive() and not (options.defensive and read('Spell['..a.spell..'].StacksWithDiscs')=='TRUE') then return false end
     if options.buff and (buffActive(a.spell) or buffActive(a.trigger) or (present(a.spell) and read('Spell['..a.spell..'].Stacks')=='FALSE')) then return false end
     a.buff=options.buff
@@ -655,13 +665,22 @@ local function abilityTick(r,s,mode,hostile)
     local function skill(name) return useAbility(r,s,kit.skill[name]) end
     local slot={slot=true};local buff={buff=true}
     if mode=='idle' then
-        if endu<math.max(50,cfg(r,'PullMinEndurance')) and
-           (d('combatRecovery',buff) or d('recovery',buff) or d('wind',buff) or d('breaths')) then return true end
+        if endu<cfg(r,'PullMinEndurance') then
+            -- Let a regeneration buff work instead of chaining recovery
+            -- discs, especially the 12-second Breaths cast.
+            local regenActive=false
+            for _,key in ipairs({'combatRecovery','recovery','wind'}) do
+                local a=kit.disc[key]
+                if a and (not a.enduCap or endu<a.enduCap) and (buffActive(a.spell) or buffActive(a.trigger)) then regenActive=true;break end
+            end
+            if not regenActive and (d('combatRecovery',buff) or d('recovery',buff) or
+               aa("Swift Tails' Chant",buff) or d('wind',buff) or (endu<=25 and d('breaths'))) then return true end
+        end
         if not present(read('Me.Aura[1].Name')) and d('aura') then return true end
         return false
     end
     if mode~='combat' then return false end
-    if endu<=25 and (d('combatRecovery',buff) or d('wind',buff) or d('breaths') or aa("Swift Tails' Chant")) then return true end
+    if endu<=25 and (d('combatRecovery',buff) or aa("Swift Tails' Chant",buff) or d('wind',buff)) then return true end
     local e=spawn(s.combatId)
     local range=num('Target.MaxRangeTo')
     local dist=tonumber(read(e..'.Distance3D'))
@@ -888,6 +907,14 @@ function M.classmainloop(r)
         status(r,s,'Set camp here first')
         return
     end
+    -- Stand on incoming aggro before any attempt to fight or feign.
+    if (engaged or assist) and s.restOwned and yes('Me.Sitting') then
+        if t>=(s.nextRestCommand or 0) then
+            command(r,'/stand');s.nextRestCommand=t+500
+        end
+        return
+    end
+    if s.restOwned and not yes('Me.Sitting') and yes('Me.Standing') and t>=(s.nextRestCommand or 0) then s.restOwned=nil end
     local pullPhase=s.phase=='outbound' or s.phase=='awaitAggro' or s.phase=='returning'
     local hp=num('Me.PctHPs')
     local stuckReturn=false
@@ -1042,7 +1069,7 @@ function M.classmainloop(r)
         end
         return
     end
-    local busyMovement=yes('Navigation.Active') or yes('MoveTo.Moving') or yes('Stick.Active') or yes('Me.Combat')
+    local busyMovement=yes('Navigation.Active') or yes('MoveTo.Moving') or yes('Stick.Active') or yes('Me.Combat') or yes('Me.Moving')
     if engaged or assist then s.nextPull=t+1500 end
     if s.combatId then
         status(r,s,'Fighting extended target')
@@ -1065,6 +1092,28 @@ function M.classmainloop(r)
             discoverAbilities(r,s)
         end
         if s.abilityPending or abilityTick(r,s,'idle',hostile) then return end
+    end
+    -- Rest only when safely in camp and no cast, movement or encounter
+    -- needs attention. Sitting permits fast out-of-combat regeneration.
+    if (cfg(r,'AutoPull')==1 or cfg(r,'UseMelee')==1) and not busyMovement and num('Me.Casting.ID')==0 and not s.abilityPending then
+        local endu=num('Me.PctEndurance')
+        local health=num('Me.PctHPs')
+        local endGoal,hpGoal=cfg(r,'PullMinEndurance'),cfg(r,'PullMinHP')
+        if endu<endGoal or (health>0 and health<hpGoal) then
+            local message=endu<endGoal and string.format('Recovering endurance (%d%% / %d%%)',endu,endGoal)
+                or string.format('Recovering health (%d%% / %d%%)',health,hpGoal)
+            status(r,s,message)
+            if read('Me.CombatState')~='DEBUFFED' and yes('Me.Standing') and t>=(s.nextRestCommand or 0) then
+                command(r,'/sit');s.restOwned=true;s.nextRestCommand=t+500
+            end
+            return
+        elseif cfg(r,'AutoPull')==1 and yes('Me.Sitting') then
+            if t>=(s.nextRestCommand or 0) then
+                command(r,'/stand');s.nextRestCommand=t+500
+                status(r,s,'Recovered; standing to pull')
+            end
+            return
+        end
     end
     if cfg(r,'AutoPull')~=1 then status(r,s,'Camp active; auto pull off');return end
     if not yes('Navigation.MeshLoaded') then status(r,s,'Waiting for MQ2Nav zone mesh');return end
