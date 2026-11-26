@@ -13,11 +13,13 @@
 #   MQ_DIR          directory holding MacroQuest.exe (default: build/linux-x64/bin/release)
 #   LAUNCH_DELAY    seconds between a client's window appearing and the next launch (default: 2)
 #   WINDOW_TIMEOUT  seconds to wait for each client window (default: 180)
+#   LOGIN_TIMEOUT   seconds to keep each plain-Proton auto-login focused before
+#                   launching the next client (default: 120; 0 disables the wait)
 #   GS_RES          EverQuest (and gamescope) resolution per client: one value for all
 #                   or one per TAGS entry, each WxH or "auto" = the tag's monitor minus
 #                   dock/panel bars along its edges (default: auto)
 #   GAMESCOPE       1 = run each client in its own nested gamescope (client always sees
-#                   itself focused); 0 = plain Proton (default: 1)
+#                   itself focused); 0 = plain Proton (default: 0)
 #   GS_ARGS         extra gamescope arguments (default: "--force-grab-cursor"; "" = none)
 #   MQ_LAUNCH_CONF  shell file setting any of the above, e.g. CHARS="..."; variables set
 #                   in the environment win (default: ~/.config/openvanilla/mq-launch.conf)
@@ -26,7 +28,7 @@ set -euo pipefail
 conf="${MQ_LAUNCH_CONF:-${XDG_CONFIG_HOME:-$HOME/.config}/openvanilla/mq-launch.conf}"
 if [[ -f "$conf" ]]; then
     # shellcheck disable=SC2153
-    env_vars="$(declare -p TAGS CHARS PROTON EQ_DIR EQ_INSTANCES MQ_DIR LAUNCH_DELAY WINDOW_TIMEOUT \
+    env_vars="$(declare -p TAGS CHARS PROTON EQ_DIR EQ_INSTANCES MQ_DIR LAUNCH_DELAY WINDOW_TIMEOUT LOGIN_TIMEOUT \
         GS_RES GAMESCOPE GS_ARGS 2>/dev/null || true)"
     # shellcheck source=/dev/null
     source "$conf"
@@ -43,7 +45,8 @@ instances="${EQ_INSTANCES:-${XDG_DATA_HOME:-$HOME/.local/share}/openvanilla/eq-i
 mq_dir="${MQ_DIR:-$repo/build/linux-x64/bin/release}"
 launch_delay="${LAUNCH_DELAY:-2}"
 window_timeout="${WINDOW_TIMEOUT:-180}"
-use_gamescope="${GAMESCOPE:-1}"
+login_timeout="${LOGIN_TIMEOUT:-120}"
+use_gamescope="${GAMESCOPE:-0}"
 read -r -a gs_res <<<"${GS_RES:-auto}"
 read -r -a gs_args <<<"${GS_ARGS---force-grab-cursor}"
 
@@ -61,6 +64,7 @@ done
 [[ -f "$eq_dir/eqgame.exe" ]] || die "eqgame.exe not found in: $eq_dir"
 [[ -f "$mq_dir/MacroQuest.exe" ]] || die "MacroQuest.exe not found in: $mq_dir (run tools/linux/build.sh)"
 (( ${#tags[@]} > 0 )) || die "TAGS is empty"
+[[ "$login_timeout" =~ ^(0|[1-9][0-9]*)$ ]] || die "LOGIN_TIMEOUT must be a nonnegative integer"
 for tag in "${tags[@]}"; do
     [[ "$tag" =~ ^[1-9]$ ]] || die "invalid tag '$tag' (expected 1-9)"
 done
@@ -179,6 +183,26 @@ eq_windows() {
     wmctrl -lx | awk '(tolower($3) ~ /^(steam_app_205710|eqgame\.exe)\./) && $5 ~ /^EverQuest/ { print $1 }'
 }
 
+# EQ can stall during login if its window loses focus. Wait for the current
+# run's world initialization before switching to the next tag. A missing
+# AutoLogin profile or unavailable server must not prevent manual login.
+wait_for_login() {
+    local win="$1" dbg="$2" previous_start="$3" deadline first_line
+    deadline=$((SECONDS + login_timeout))
+    while (( SECONDS < deadline )); do
+        first_line="$(head -n 1 "$dbg" 2>/dev/null || true)"
+        if [[ -n "$first_line" && "$first_line" != "$previous_start" ]] &&
+            grep -q 'Initialization complete\.' "$dbg"; then
+            printf 'client %d: entered game\n' "$client"
+            return 0
+        fi
+        wmctrl -l | awk -v win="$win" '$1 == win { found=1 } END { exit !found }' \
+            || die "client $client: window closed during login (see $dbg)"
+        sleep 2
+    done
+    printf 'client %d: login not complete after %ss; continuing (manual login may be needed)\n' "$client" "$login_timeout" >&2
+}
+
 declare -A seen=()
 while read -r win; do
     [[ -n "$win" ]] && seen["$win"]=1
@@ -208,6 +232,7 @@ else
 fi
 
 client=0
+first_win=""
 for tag in "${tags[@]}"; do
     client=$((client + 1))
     # The WM's _NET_CURRENT_DESKTOP/_NET_WM_DESKTOP handlers take 0-based indexes.
@@ -230,15 +255,16 @@ for tag in "${tags[@]}"; do
     inst="$instances/tag$tag"
     prepare_instance "$inst" || die "client $client: could not prepare $inst"
     set_eq_video "$inst" "$gs_w" "$gs_h"
+    previous_start="$(head -n 1 "$inst/Logs/dbg.txt" 2>/dev/null || true)"
     if [[ "$use_gamescope" == 1 ]]; then
         # Fixed inner (-w/-h) and outer (-W/-H) size; dwm may resize the outer window,
         # gamescope scales, and EQ never sees a mode change or focus loss.
         # no_new_privs drops gamescope's file CAP_SYS_NICE: two gamescopes with
         # realtime Vulkan queues fault NVIDIA GPUs (Xid 51 BAD_TSG; ublue-os/bazzite#6089).
         (cd "$inst" && exec setpriv --no-new-privs gamescope -w "$gs_w" -h "$gs_h" -W "$gs_w" -H "$gs_h" "${gs_args[@]}" \
-            -- "$proton" run "$inst/eqgame.exe" "${args[@]}") >/dev/null 2>&1 &
+            -- "$proton" run "$inst/eqgame.exe" "${args[@]}") >"$inst/Logs/launch.log" 2>&1 &
     else
-        (cd "$inst" && exec "$proton" run "$inst/eqgame.exe" "${args[@]}") >/dev/null 2>&1 &
+        (cd "$inst" && exec "$proton" run "$inst/eqgame.exe" "${args[@]}") >"$inst/Logs/launch.log" 2>&1 &
     fi
     launcher_pid=$!
 
@@ -264,8 +290,16 @@ for tag in "${tags[@]}"; do
     # Pin it in case the tag changed before the window mapped.
     wmctrl -i -r "$win" -t "$((tag - 1))"
     printf 'client %d: window %s -> tag %d\n' "$client" "$win" "$tag"
+    [[ -n "$first_win" ]] || first_win="$win"
+    if [[ "$use_gamescope" == 0 ]]; then
+        wmctrl -i -a "$win"
+        if [[ "$char" != - ]] && (( login_timeout > 0 )); then
+            wait_for_login "$win" "$inst/Logs/dbg.txt" "$previous_start"
+        fi
+    fi
 
     if (( client < ${#tags[@]} )); then sleep "$launch_delay"; fi
 done
 wmctrl -s "$((tags[0] - 1))"
+if [[ "$use_gamescope" == 0 ]]; then wmctrl -i -a "$first_win"; fi
 printf 'launched %d clients\n' "$client"

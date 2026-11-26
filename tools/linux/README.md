@@ -190,7 +190,7 @@ if it isn't running, then for each entry in `TAGS` (default `3 4 5 6`, one
 client per tag) it switches to the tag, launches a client, waits for its
 window and pins the window to the tag. It needs `wmctrl` and an EWMH window
 manager such as dwm-titus. Override `PROTON`, `EQ_DIR`, `MQ_DIR`,
-`LAUNCH_DELAY` (default 2s) or `WINDOW_TIMEOUT` as needed:
+`LAUNCH_DELAY` (default 2s), `WINDOW_TIMEOUT` or `LOGIN_TIMEOUT` as needed:
 
 ```sh
 TAGS="3 4 5 6" tools/linux/mq-launch.sh
@@ -237,11 +237,21 @@ own tags, so on a 2560x1440 + 1920x1080 setup with a 30px bar, tag 3 gets
 GS_RES="2560x1410 1920x1050 1920x1050 1920x1050" tools/linux/mq-launch.sh
 ```
 
-Each client runs inside its own nested
-[gamescope](https://github.com/ValveSoftware/gamescope) at that size, so
-EverQuest never sees a resize or focus loss. `GS_ARGS` defaults to
-`--force-grab-cursor`; set `GAMESCOPE=0` to run plain Proton. The launcher
-starts gamescope under `setpriv --no-new-privs`, which drops its file
+By default, clients run directly under Proton. The launcher explicitly
+activates each window and, for AutoLogin characters, waits for the game to
+finish entering the world before switching to another tag. This avoids the
+login stalls seen when focus changes during startup. `LOGIN_TIMEOUT` defaults
+to 120 seconds per client; a timeout allows the remaining clients to launch
+and the character to be logged in manually. Set `LOGIN_TIMEOUT=0` to skip
+the wait. Each client's `Logs/launch.log` captures Proton and compositor output.
+
+Set `GAMESCOPE=1` to opt into independent nested
+[gamescope](https://github.com/ValveSoftware/gamescope) instances at the
+configured resolutions. `GS_ARGS` defaults to `--force-grab-cursor`.
+On X11, concurrent EverQuest clients have been observed to fail with
+`BadWindow (X_UnmapWindow)` even when standalone graphics clients at the
+same resolutions work. Plain Proton is the tested workaround.
+The launcher starts gamescope under `setpriv --no-new-privs`, which drops its file
 `CAP_SYS_NICE` (gamescope logs "No CAP_SYS_NICE, falling back to
 regular-priority"). On NVIDIA, two gamescopes that both use realtime Vulkan
 queues fault the GPU (`Xid 51 BAD_TSG`, then `NV_ERR_RESET_REQUIRED` in
