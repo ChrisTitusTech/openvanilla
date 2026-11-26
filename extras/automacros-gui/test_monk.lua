@@ -769,11 +769,11 @@ return function(setup,mock,eq)
     value('Group.Member[2].Class.ShortName','CLR');value('Group.Member[2].ID',11);value('Group.Member[2].Name','Healer')
     value('Group.Member[3].Class.ShortName','BRD');value('Group.Member[3].ID',12);value('Group.Member[3].Name','Bard')
     eq(logic.namedPullReady(monk,501),false,'wait for fresh named readiness data')
-    responses.namedWarDefense={'autolua-war-defense','10','FALSE','FALSE','FALSE','FALSE','1'}
+    responses.namedWarDefense={'autolua-war-defense','10','1','FALSE','2','TRUE','3','TRUE','4','TRUE','1'}
     responses.namedClrDefense={'autolua-clr-defense','11','TRUE','FALSE','1'}
     responses.namedBrdDefense={'autolua-brd-defense','12','FALSE','TRUE','1'}
     eq(logic.namedPullReady(monk,501),false,'named held while sustained tank defense cooling down')
-    responses.namedWarDefense[3]='TRUE'
+    responses.namedWarDefense[4]='TRUE'
     eq(logic.namedPullReady(monk,501),true,'named eligible when tank, healer and bard ready')
     Obs.ensure,Obs.read=oldEnsure,oldRead
     monk:call('onstop')

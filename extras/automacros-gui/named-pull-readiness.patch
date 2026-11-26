@@ -1,22 +1,28 @@
 --- a/observer.lua
 +++ b/observer.lua
-@@ -5,6 +5,9 @@
+@@ -5,6 +5,15 @@
  local M={}
  M.hpQuery='String[autolua-hp|${Me.ID}|${Me.PctHPs}|${Time.MillisecondsSinceEpoch}]'
  M.assistQuery='String[autolua-assist|${Me.ID}|${Target.ID}|${Me.Combat}|${Me.XTarget}|${Time.MillisecondsSinceEpoch}]'
-+M.warDefenseQuery='String[autolua-war-defense|${Me.ID}|${Me.CombatAbilityReady[${Spell[Last Stand Discipline].RankName}]}|${Me.CombatAbilityReady[Last Stand Discipline Rk. II]}|${Me.CombatAbilityReady[${Spell[Final Stand Discipline].RankName}]}|${Me.CombatAbilityReady[${Spell[Stonewall Discipline].RankName}]}|${Time.MillisecondsSinceEpoch}]'
++local warDefenseFields={}
++for _,name in ipairs({'Last Stand Discipline','Final Stand Discipline','Stonewall Discipline','Defensive Discipline'}) do
++    local rank='${Spell['..name..'].RankName}'
++    warDefenseFields[#warDefenseFields+1]='${Me.CombatAbility['..rank..']}'
++    warDefenseFields[#warDefenseFields+1]='${Me.CombatAbilityReady['..rank..']}'
++end
++M.warDefenseQuery='String[autolua-war-defense|${Me.ID}|'..table.concat(warDefenseFields,'|')..'|${Time.MillisecondsSinceEpoch}]'
 +M.clrDefenseQuery='String[autolua-clr-defense|${Me.ID}|${Me.AltAbilityReady[Burst of Life]}|${Me.AltAbilityReady[Divine Arbitration]}|${Time.MillisecondsSinceEpoch}]'
 +M.brdDefenseQuery='String[autolua-brd-defense|${Me.ID}|${Me.AltAbilityReady[Fierce Eye]}|${Me.AltAbilityReady[Quick Time]}|${Time.MillisecondsSinceEpoch}]'
  local function get(peer,method,query)
      local ok,v=pcall(function()
          return mq.TLO.DanNet(peer)[method](query)()
-@@ -89,7 +92,10 @@
+@@ -89,7 +98,10 @@
          end
          -- Identity protects against zoning and old data from a different spawn.
          local valid=(o.query==M.hpQuery and parts[1]=='autolua-hp' and #parts==4) or
 -                    (o.query==M.assistQuery and parts[1]=='autolua-assist' and #parts==6)
 +                    (o.query==M.assistQuery and parts[1]=='autolua-assist' and #parts==6) or
-+                    (o.query==M.warDefenseQuery and parts[1]=='autolua-war-defense' and #parts==7) or
++                    (o.query==M.warDefenseQuery and parts[1]=='autolua-war-defense' and #parts==11) or
 +                    (o.query==M.clrDefenseQuery and parts[1]=='autolua-clr-defense' and #parts==5) or
 +                    (o.query==M.brdDefenseQuery and parts[1]=='autolua-brd-defense' and #parts==5)
          if not valid or tonumber(parts[2])~=o.expectedId or not tonumber(parts[#parts]) then
@@ -29,9 +35,9 @@
  eq(Obs.read(testObs,'tankHP'),nil,'disconnected peer immediately falls back')
  record('Zeakus',Obs.hpQuery).connected=true
 +Obs.ensure(testObs,'namedWarDefense','Zeakus',Obs.warDefenseQuery,123)
-+publish('Zeakus',Obs.warDefenseQuery,'autolua-war-defense|123|FALSE|TRUE|FALSE|FALSE|'..(epoch+3000))
++publish('Zeakus',Obs.warDefenseQuery,'autolua-war-defense|123|1|TRUE|2|FALSE|3|FALSE|4|FALSE|'..(epoch+3000))
 +eq(Obs.read(testObs,'namedWarDefense')[4],'TRUE','fresh named defensive readiness payload')
-+publish('Zeakus',Obs.warDefenseQuery,'autolua-war-defense|999|TRUE|TRUE|FALSE|FALSE|'..(epoch+3000))
++publish('Zeakus',Obs.warDefenseQuery,'autolua-war-defense|999|1|TRUE|2|TRUE|3|FALSE|4|FALSE|'..(epoch+3000))
 +eq(Obs.read(testObs,'namedWarDefense'),nil,'reject stale identity on defensive readiness')
 +Obs.drop(testObs,'namedWarDefense')
  Obs.drop(testObs,'tankHP')

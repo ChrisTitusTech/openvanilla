@@ -356,7 +356,15 @@ function M.namedPullReady(r,id,diagnostic)
             Obs.ensure(r,role.key,name,role.query,memberId)
             local payload=Obs.read(r,role.key)
             local ready=false
-            if payload then for j=3,#payload-1 do if payload[j]=='TRUE' then ready=true;break end end end
+            if payload and class=='WAR' then
+                -- Require the strongest learned sustained defense, not a
+                -- weaker obsolete discipline on a separate ready timer.
+                for j=3,#payload-2,2 do
+                    if (tonumber(payload[j]) or 0)>0 then ready=payload[j+1]=='TRUE';break end
+                end
+            elseif payload then
+                for j=3,#payload-1 do if payload[j]=='TRUE' then ready=true;break end end
+            end
             if diagnostic then r:log('Named pull readiness class='..class..' member='..name..' ready='..tostring(ready)..' data='..(payload and table.concat(payload,'|') or 'unavailable')) end
             if not ready and not waitReason then
                 waitReason='Waiting for named pull: '..role.label..(payload and ' cooldown' or ' readiness data')
