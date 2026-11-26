@@ -89,6 +89,25 @@ suite covers early buff disappearance, rank lookup fallback, combat
 refresh, and the inter-song casting boundary.
 
 
+## Bard combat readiness and song priorities
+
+The additional `bard-priority.patch` applies to the installed AutoLua
+1.5 Bard scheduler after the Selo refresh. It maintains Aria, War March
+and Pulse during safe downtime, without slowing a selected NPC or
+using combat bursts. Secondary songs and clickies must fit within the
+next core song's actual casting deadline. If a secondary would cause a
+core buff to expire, the scheduler refreshes that core song first.
+The clicky check uses its actual cast time plus a safety allowance.
+
+From the installed `lua/automacros` directory, apply the patch once:
+
+```bash
+patch --dry-run -p1 < "$overlay/bard-priority.patch"
+patch -p1 < "$overlay/bard-priority.patch"
+```
+
+Run the offline tests and restart the bard while the group is idle.
+
 ## Monk AutoLua
 
 The new native Lua class module is selected automatically on a monk by

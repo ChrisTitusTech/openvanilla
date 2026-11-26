@@ -1,0 +1,154 @@
+--- a/bard.lua
++++ b/bard.lua
+@@ -78,14 +78,14 @@
+ -- Essential group buffs get the first available cast before expiry. The
+ -- remaining-time deadline includes the *next* song's cast budget, not only
+ -- the current song, so a later slot cannot hide an earlier deadline.
+-function M.scheduleCombat(r)
++function M.scheduleCombat(r,downtime)
+     if (r:get({},'castready') or 0)>0 then return false end
+     local now=mq.gettime()
+     r.songAttempts=r.songAttempts or {}
+     local slow=r:get({},'slowsong')
+     local targetId=num(r,'Target.ID')
+     local targetValid=targetId>0 and read(r,'Target.Type')=='NPC' and num(r,'Target.Distance')<150
+-    local slowEligible=targetValid and r:get({},'UseSlow')==1 and known(r,slow) and
++    local slowEligible=not downtime and targetValid and r:get({},'UseSlow')==1 and known(r,slow) and
+         num(r,'Target.Buff['..slow..'].SpellID')==0
+     local slowDue=slowEligible and now>=(r.songAttempts[slow] or 0)
+     local newSlow=slowEligible and r.slowTarget~=targetId
+@@ -97,7 +97,7 @@
+     end
+     -- Aria, War March and Pulse are the core group's sustained support.
+     local order={{'song3',1,true},{'song2',2,true},{'song5',3,true},{'song1',4,false},{'song4',5,false}}
+-    local bestCore,bestOther
++    local bestCore,bestOther,earliestCore
+     local coreSlack=math.huge
+     for _,entry in ipairs(order) do
+         local spell=r:get({},entry[1])
+@@ -105,35 +105,52 @@
+             local remaining=num(r,'Me.BuffDuration['..spell..'].Raw')
+             local time=castTime(r,spell)
+             local slack=remaining-time
+-            if entry[3] then coreSlack=math.min(coreSlack,slack) end
+             -- If a missing spell's last attempt has not had time to land,
+             -- give the others their turn rather than cycling one failure.
+-            if remaining<=math.max(5000,time+2500) and known(r,spell) and now>=(r.songAttempts[spell] or 0) then
+-                local current=entry[3] and bestCore or bestOther
++            if known(r,spell) and now>=(r.songAttempts[spell] or 0) then
+                 local candidate={spell=spell,remaining=remaining,slack=slack,rank=entry[2]}
+-                if not current or slack<current.slack or (slack==current.slack and candidate.rank<current.rank) then
+-                    if entry[3] then bestCore=candidate else bestOther=candidate end
++                if entry[3] and (not earliestCore or slack<earliestCore.slack or
++                    (slack==earliestCore.slack and candidate.rank<earliestCore.rank)) then
++                    earliestCore=candidate;coreSlack=slack
++                end
++                if remaining<=math.max(5000,time+2500) then
++                    local current=entry[3] and bestCore or bestOther
++                    if not current or slack<current.slack or (slack==current.slack and candidate.rank<current.rank) then
++                        if entry[3] then bestCore=candidate else bestOther=candidate end
++                    end
+                 end
+             end
+         end
+     end
+-    if bestCore then queue(r,bestCore.spell,'core-expiry',bestCore.remaining);return true end
++    if bestCore then queue(r,bestCore.spell,downtime and 'downtime-core' or 'core-expiry',bestCore.remaining);return true end
++    -- Keep essential songs warm while the puller is recovering, without
++    -- touching targets or spending periodic combat-only bursts.
++    if downtime then return false end
+     local burst=r:get({},'bmsong')
+-    if known(r,burst) and (r:get({},'bmsongtimer') or 0)==0 and coreSlack>castTime(r,burst)+500 then
++    if known(r,burst) and (r:get({},'bmsongtimer') or 0)==0 and coreSlack>castTime(r,burst)+750 then
+         queue(r,burst,'periodic-group-burst',0)
+         r:set({},'bmsongtimer','1m')
+         return true
+     end
+-    if slowDue and now>=(r.slowNext or 0) and coreSlack>castTime(r,slow)+500 then
++    if slowDue and now>=(r.slowNext or 0) and coreSlack>castTime(r,slow)+750 then
+         r.slowTarget=targetId;r.slowNext=now+12000
+         queue(r,slow,'slow-retry',0)
+         return true
+     end
+-    if bestOther then queue(r,bestOther.spell,'secondary-expiry',bestOther.remaining);return true end
++    if bestOther then
++        if coreSlack>castTime(r,bestOther.spell)+750 then
++            queue(r,bestOther.spell,'secondary-expiry',bestOther.remaining);return true
++        elseif earliestCore then
++            -- Refresh a core song early if a secondary would consume its
++            -- final safe casting window, rather than let it expire.
++            queue(r,earliestCore.spell,'core-before-secondary',earliestCore.remaining);return true
++        end
++    end
+     local item=r:get({},'darksword')
+     if item and item~='NULL' and num(r,'FindItem['..item..'].ID')>0 and
+        read(r,'Me.ItemReady['..item..']')=='TRUE' and (r:get({},'darkswordtimer') or 0)==0 and
+-       num(r,"Me.BuffDuration[Item Benefit: Doben's Spry Sonata Rk. II].Raw")<4000 and coreSlack>4000 then
++       num(r,"Me.BuffDuration[Item Benefit: Doben's Spry Sonata Rk. II].Raw")<4000 and
++       coreSlack>math.max(4000,num(r,'FindItem['..item..'].CastTime.Raw')+1500) then
+         r:set({},'darkswordtimer','15s')
+         r:log('Song item request='..item..' reason=core-buffs-have-time')
+         r:call('itemnow',item)
+--- a/brd.lua
++++ b/brd.lua
+@@ -186,8 +186,8 @@
+         r:invoke(s, [=[songqueue]=], [=["${aurasong}"]=])
+     elseif r:condition(s, [=[${Me.PctMana}>80&&${Group}&&${Me.GemTimer[${regensong}]}==0&&!${Me.Invis}&& !${Me.Sitting}&&${castready}==0&&!${Me.Combat}&&${Me.XTarget}==0&&(${Spawn[group healer].PctMana}<80||${Spawn[group tank].PctMana}<80)&&${Me.Gem[${regensong}]}]=]) then
+         r:invoke(s, [=[songqueue]=], [=["${regensong}"]=])
+-    elseif r:condition(s, [=[${Select[${Me.Casting.ID},${Spell[${song1}].ID},${Spell[${song3}].ID},${Spell[${song4}].ID},${Spell[${song2}].ID},${Spell[${song5}].ID}]}>0&& !${Me.Invis}&&!${Me.Combat}&&${Me.XTarget}==0]=]) then
+-        r:command(s, [=[/stopcast]=])
++    elseif r:condition(s, [=[!${Me.Moving}&&!${Me.Invis}&&${Me.Standing}&&${Me.State.NotEqual[FEIGN]}&&${castready}==0&&!${Me.Combat}&&${Me.XTarget}==0]=]) then
++        Bard.scheduleCombat(r,true)
+     end
+     do return nil end
+     -- ----------------------------------------------------------------------------
+--- a/tests/test.lua
++++ b/tests/test.lua
+@@ -858,6 +858,47 @@
+ eq(selected,'Test Click','item after core schedule')
+ print('PASS bard deadline ordering, core priority, safe item timing')
+
++-- A secondary due now must not consume a core song's final safe cast.
++rotation.songAttempts={};rotation:set({},'darkswordtimer',0)
++for _,name in pairs(names) do mock.values['Me.BuffDuration['..name..'].Raw']='6000' end
++mock.values['Me.BuffDuration[Arcane].Raw']='0'
++eq(Bard.scheduleCombat(rotation),true,'early core refresh before secondary')
++eq(selected,'Aria','protect core deadline before optional cast')
++for _,name in pairs(names) do mock.values['Me.BuffDuration['..name..'].Raw']='15000' end
++mock.values['Me.BuffDuration[Arcane].Raw']='0'
++eq(Bard.scheduleCombat(rotation),true,'secondary if core has sufficient slack')
++eq(selected,'Arcane','secondary still refreshed when safe')
++for _,name in pairs(names) do mock.values['Me.BuffDuration['..name..'].Raw']='10000' end
++mock.values['FindItem[Test Click].CastTime.Raw']='8000'
++eq(Bard.scheduleCombat(rotation),false,'actual long item cast must fit core deadline')
++mock.values['FindItem[Test Click].CastTime.Raw']='0'
++
++-- Keep only essential support warm out of combat. Neither a selected
++-- NPC nor an expired secondary buff should cause a downtime slow.
++rotation.songAttempts={}
++rotation:set({},'UseSlow',1);rotation:set({},'slowsong','Test Slow')
++mock.values['Target.Type']='NPC';mock.values['Target.ID']='999'
++mock.values['Target.Distance']='20';mock.values['Target.Buff[Test Slow].SpellID']='0'
++mock.values['Me.Gem[Test Slow]']='9';mock.values['Me.GemTimer[Test Slow].Raw']='0'
++mock.values['Spell[Test Slow].MyCastTime.Raw']='1500';mock.values['Spell[Test Slow].Mana']='0'
++mock.values['Me.BuffDuration[Pulse].Raw']='0'
++eq(Bard.scheduleCombat(rotation,true),true,'maintain missing core song during downtime')
++eq(selected,'Pulse','do not slow selected NPC out of combat')
++for _,name in pairs(names) do mock.values['Me.BuffDuration['..name..'].Raw']='15000' end
++mock.values['Me.BuffDuration[Arcane].Raw']='0'
++eq(Bard.scheduleCombat(rotation,true),false,'no secondary, combat burst or item during downtime')
++mock.values['Me.BuffDuration[Aria].Raw']='0'
++mock.values['Me.Aura[1]']='Test Aura';mock.values['Spell[Test Aura].ID']='1234'
++mock.values['Me.Moving']='FALSE';mock.values['Me.Invis']='FALSE'
++mock.values['Me.Standing']='TRUE';mock.values['Me.State']='STAND'
++rotation:set({},'regensong','NULL')
++rotation:call('downtimesongs')
++eq(selected,'Aria','bard main downtime routine runs core scheduler')
++rotation.songAttempts={}
++for _,name in pairs(names) do mock.values['Me.BuffDuration['..name..'].Raw']='15000' end
++rotation:set({},'darkswordtimer','15s')
++print('PASS bard warm core songs, optional-cast slack and actual item cast duration')
++
+ -- Target slow is not repeated on the same target just because cached
+ -- data has not populated, while a genuinely new target can be slowed.
+ rotation:set({},'UseSlow',1)
