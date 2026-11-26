@@ -205,6 +205,17 @@ up in `config/login.db`. Add characters there from the MacroQuest tray menu
 TAGS="3 4 5 6" CHARS="erollisi:Main erollisi:Alt1 erollisi:Alt2 -" tools/linux/mq-launch.sh
 ```
 
+To keep a setup, put the same variables in `~/.config/openvanilla/mq-launch.conf`
+(`MQ_LAUNCH_CONF` overrides the path). Environment variables still win:
+
+```sh
+TAGS="3 4 5 6"
+CHARS="erollisi:Main erollisi:Alt1 erollisi:Alt2 erollisi:Alt3"
+```
+
+A character missing from `login.db` stops at the login screen; log in by hand
+once and the next launch logs in automatically.
+
 Each tag runs EverQuest from its own directory,
 `~/.local/share/openvanilla/eq-instances/tag<N>` (`EQ_INSTANCES` overrides
 the base). It holds the client's own `eqclient.ini` and `Logs/`; every other

@@ -19,7 +19,19 @@
 #   GAMESCOPE       1 = run each client in its own nested gamescope (client always sees
 #                   itself focused); 0 = plain Proton (default: 1)
 #   GS_ARGS         extra gamescope arguments (default: "--force-grab-cursor"; "" = none)
+#   MQ_LAUNCH_CONF  shell file setting any of the above, e.g. CHARS="..."; variables set
+#                   in the environment win (default: ~/.config/openvanilla/mq-launch.conf)
 set -euo pipefail
+
+conf="${MQ_LAUNCH_CONF:-${XDG_CONFIG_HOME:-$HOME/.config}/openvanilla/mq-launch.conf}"
+if [[ -f "$conf" ]]; then
+    # shellcheck disable=SC2153
+    env_vars="$(declare -p TAGS CHARS PROTON EQ_DIR EQ_INSTANCES MQ_DIR LAUNCH_DELAY WINDOW_TIMEOUT \
+        GS_RES GAMESCOPE GS_ARGS 2>/dev/null || true)"
+    # shellcheck source=/dev/null
+    source "$conf"
+    eval "$env_vars"
+fi
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 steam="${STEAM_ROOT:-$HOME/.steam/steam}"
