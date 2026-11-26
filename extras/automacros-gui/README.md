@@ -223,7 +223,10 @@ when health is low. Major damage discs and burn AAs are used against
 named targets or when at least three live encounter NPCs are inside
 the configured camp radius plus a 20-unit combat margin. The margin
 lets the monk assist the tank when NPCs stop just outside camp but does
-not change pull or return-to-camp distances. Ordinary fights, elapsed fight time and
+not change pull or return-to-camp distances. When a living nearby tank has
+intercepted a damaged extended target, a bounded 50-unit margin permits
+joining that fight only when the NPC is within 35 units of the tank.
+Ordinary fights, elapsed fight time and
 extended targets outside camp do not trigger burns.
 Long-duration active discs are not overwritten. Offensive abilities require a
 valid target and range; readiness, health and endurance reserves are checked. Requests are

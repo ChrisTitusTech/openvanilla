@@ -213,6 +213,16 @@ local function groupTank()
     end
     return fallback
 end
+local function combatTargetInCamp(r,s,id)
+    local p=position(spawn(id))
+    local d=distance(p,s.camp)
+    if d<=combatCampRadius(r) then return true end
+    -- The warrior may have intercepted an add farther out. Assist a damaged
+    -- extended target near the living tank, but never chase distant roamers.
+    if d>cfg(r,'AutoCampRadius')+50 or num(spawn(id)..'.PctHPs')>=100 then return false end
+    local tank=groupTank()
+    return tank and distance(p,position(spawn(tank.id)))<=35 or false
+end
 local function groupReady(r)
     if num('Me.PctHPs')<cfg(r,'PullMinHP') then return false,'Waiting for monk health' end
     local endu=num('Me.PctEndurance')
@@ -713,12 +723,12 @@ local function abilityTick(r,s,mode,hostile)
         local inCamp,includesTarget=0,false
         for _,id in ipairs(hostile) do
             if id==s.combatId then includesTarget=true end
-            if distance(position(spawn(id)),s.camp)<=combatCampRadius(r) then
+            if combatTargetInCamp(r,s,id) then
                 inCamp=inCamp+1
             end
         end
         -- A group-assist target may be engaged before it appears on our XTarget.
-        if not includesTarget and distance(position(e),s.camp)<=combatCampRadius(r) then
+        if not includesTarget and combatTargetInCamp(r,s,s.combatId) then
             inCamp=inCamp+1
         end
         burn=inCamp>=3
@@ -746,7 +756,7 @@ end
 -- bard/warrior; trained monk abilities are scheduled after engagement.
 local function engageCombat(r,s,hostile,assist)
     if cfg(r,'UseMelee')~=1 or not s.camp or yes('Navigation.Active') then return end
-    if not s.combatId and campDistance(s)>cfg(r,'AutoCampRadius') then return end
+    if not s.combatId and campDistance(s)>cfg(r,'AutoCampRadius')+50 then return end
     local function valid(id)
         if not npc(id) or trap(id) then return false end
         local e=spawn(id)
@@ -754,7 +764,7 @@ local function engageCombat(r,s,hostile,assist)
         local threshold=cfg(r,'AutoAssistAt')
         return read(e..'.CanEngage')~='FALSE' and yes(e..'.LineOfSight') and
             ((hp>0 and hp<=threshold) or (hp==0 and threshold==100)) and
-            distance(position(e),s.camp)<=combatCampRadius(r)
+            combatTargetInCamp(r,s,id)
     end
     local id=s.combatId or (valid(assist) and assist or nil)
     local lowest=101
@@ -976,7 +986,7 @@ function M.classmainloop(r)
         local tank=groupTank()
         local threatInCamp=false
         for id,pct in pairs(hate.byId) do
-            if pct>=100 and (id==s.combatId or distance(position(spawn(id)),s.camp)<=combatCampRadius(r)) then
+            if pct>=100 and (id==s.combatId or combatTargetInCamp(r,s,id)) then
                 threatInCamp=true;break
             end
         end
@@ -1123,6 +1133,10 @@ function M.classmainloop(r)
         engageCombat(r,s,hostile,assist)
         return
     end
+    if (engaged or assist) and engageCombat(r,s,hostile,assist) then
+        status(r,s,'Fighting extended target')
+        return
+    end
     if campDistance(s)>cfg(r,'AutoCampRadius') then
         if busyMovement then
             status(r,s,'Waiting for movement or attack to finish');return
@@ -1131,7 +1145,7 @@ function M.classmainloop(r)
     end
     if engaged or assist then
         status(r,s,'Fighting extended target')
-        if not engageCombat(r,s,hostile,assist) then abilityTick(r,s,'recovery',hostile) end
+        abilityTick(r,s,'recovery',hostile)
         return
     end
     if not busyMovement and num('Me.Casting.ID')==0 then
