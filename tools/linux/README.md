@@ -186,14 +186,14 @@ sleep 15; "$proton" run "$eq/eqgame.exe" patchme &
 ```
 
 `tools/linux/mq-launch.sh` does this for you. It starts `MacroQuest.exe`
-if it isn't running, then for each entry in `TAGS` (default `3 7 8 9`, one
+if it isn't running, then for each entry in `TAGS` (default `3 4 5 6`, one
 client per tag) it switches to the tag, launches a client, waits for its
 window and pins the window to the tag. It needs `wmctrl` and an EWMH window
 manager such as dwm-titus. Override `PROTON`, `EQ_DIR`, `MQ_DIR`,
 `LAUNCH_DELAY` (default 2s) or `WINDOW_TIMEOUT` as needed:
 
 ```sh
-TAGS="3 7 8 9" tools/linux/mq-launch.sh
+TAGS="3 4 5 6" tools/linux/mq-launch.sh
 ```
 
 To auto-login, set `CHARS` to one `server:character` per tag (`-` skips a
@@ -202,27 +202,32 @@ up in `config/login.db`. Add characters there from the MacroQuest tray menu
 (AutoLogin profiles), or log in once by hand and AutoLogin saves the account.
 
 ```sh
-TAGS="3 7 8 9" CHARS="erollisi:Main erollisi:Alt1 erollisi:Alt2 -" tools/linux/mq-launch.sh
+TAGS="3 4 5 6" CHARS="erollisi:Main erollisi:Alt1 erollisi:Alt2 -" tools/linux/mq-launch.sh
 ```
 
-By default each client runs inside its own nested
-[gamescope](https://github.com/ValveSoftware/gamescope) at a fixed
-`GS_RES`. The default `auto` uses the primary monitor minus any panel docked
-to its edges (2560x1440 with a 30px bar gives 2560x1410). The launcher also
-writes that size to `eqclient.ini` (`WindowedWidth`/`WindowedHeight`, zero
-window offsets, windowed mode), so EverQuest exactly fills gamescope's nested
-screen. The first run saves a backup as `eqclient.ini.mq-launch.bak`. When the window manager resizes or
-unfocuses the window, gamescope scales the output and EverQuest never sees
-a resolution change or focus loss. `GS_ARGS` defaults to
-`--force-grab-cursor` so mouse input and mouselook stay inside the client;
-set `GS_ARGS=""` to drop it, or `GAMESCOPE=0` to run plain Proton. If gamescope exits at once, check that `gamescope -- glxgears`
-works. On NVIDIA, `vkCreateDevice failed (VkResult: -3)` together with
-`NV_ERR_RESET_REQUIRED` in `journalctl -k` means the GPU faulted and needs
-a reboot.
+Before each launch the script writes the client's size to `eqclient.ini`:
+`WindowedWidth`/`WindowedHeight`, zero window offsets and windowed mode.
+EverQuest reads this file at startup, so each client opens at exactly the
+size of its tile. `GS_RES` sets the size, either one value for every client
+or one per `TAGS` entry. The default `auto` uses the monitor that shows the
+tag, minus any panel docked to its edges. dwm-titus gives each monitor its
+own tags, so on a 2560x1440 + 1920x1080 setup with a 30px bar, tag 3 gets
+2560x1410 and tags 4 to 6 get 1920x1050. The first run saves a backup as
+`eqclient.ini.mq-launch.bak`.
 
 ```sh
-GS_RES=2560x1440 tools/linux/mq-launch.sh
+GS_RES="2560x1410 1920x1050 1920x1050 1920x1050" tools/linux/mq-launch.sh
 ```
+
+`GAMESCOPE=1` runs each client inside its own nested
+[gamescope](https://github.com/ValveSoftware/gamescope) at that size, so
+EverQuest never sees a resize or focus loss. `GS_ARGS` defaults to
+`--force-grab-cursor`. It is off by default. On an RTX 4070 SUPER with
+NVIDIA 620.70, starting a second nested gamescope while a client was
+running faulted the GPU (`Xid 51 BAD_TSG`, then `NV_ERR_RESET_REQUIRED` in
+`journalctl -k`), and a reboot was needed. After that fault every Vulkan or
+GL program fails, including gamescope (`vkCreateDevice failed (VkResult:
+-3)`) and the Quickshell panel.
 
 Wine tray icons use the X11 XEmbed protocol. Panels that only host
 StatusNotifierItem icons (Quickshell, Waybar) need a bridge, or the

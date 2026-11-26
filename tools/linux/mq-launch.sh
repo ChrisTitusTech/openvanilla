@@ -2,7 +2,7 @@
 # Start MacroQuest and N EverQuest clients under Proton, each on its own
 # tag/workspace: switch to the tag, launch, wait for the window, repeat (tools/linux/README.md, "Running (multibox)").
 # Usage: tools/linux/mq-launch.sh
-#   TAGS            1-based tags, one client per entry (default: "3 7 8 9")
+#   TAGS            1-based tags, one client per entry (default: "3 4 5 6")
 #   CHARS           optional AutoLogin characters paired with TAGS, as server:character
 #                   ("-" = no auto-login), e.g. "erollisi:Tums erollisi:Dantea"
 #   PROTON          proton script (default: GE-Proton10-34 in compatibilitytools.d)
@@ -10,24 +10,26 @@
 #   MQ_DIR          directory holding MacroQuest.exe (default: build/linux-x64/bin/release)
 #   LAUNCH_DELAY    seconds between a client's window appearing and the next launch (default: 2)
 #   WINDOW_TIMEOUT  seconds to wait for each client window (default: 180)
-#   GAMESCOPE       1 = run each client in its own nested gamescope (fixed resolution,
-#                   client always sees itself focused); 0 = plain Proton (default: 1)
-#   GS_RES          gamescope and EverQuest resolution, WxH, or "auto" = primary monitor
-#                   minus dock/panel bars along its edges (default: auto)
+#   GS_RES          EverQuest (and gamescope) resolution per client: one value for all
+#                   or one per TAGS entry, each WxH or "auto" = the tag's monitor minus
+#                   dock/panel bars along its edges (default: auto)
+#   GAMESCOPE       1 = run each client in its own nested gamescope (client always sees
+#                   itself focused); 0 = plain Proton (default: 0; on NVIDIA 620 a
+#                   second nested gamescope faulted the GPU, Xid 51)
 #   GS_ARGS         extra gamescope arguments (default: "--force-grab-cursor"; "" = none)
 set -euo pipefail
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 steam="${STEAM_ROOT:-$HOME/.steam/steam}"
-read -r -a tags <<<"${TAGS:-3 7 8 9}"
+read -r -a tags <<<"${TAGS:-3 4 5 6}"
 read -r -a chars <<<"${CHARS:-}"
 proton="${PROTON:-$steam/compatibilitytools.d/GE-Proton10-34/proton}"
 eq_dir="${EQ_DIR:-$steam/steamapps/common/Everquest F2P}"
 mq_dir="${MQ_DIR:-$repo/build/linux-x64/bin/release}"
 launch_delay="${LAUNCH_DELAY:-2}"
 window_timeout="${WINDOW_TIMEOUT:-180}"
-use_gamescope="${GAMESCOPE:-1}"
-gs_res="${GS_RES:-auto}"
+use_gamescope="${GAMESCOPE:-0}"
+read -r -a gs_res <<<"${GS_RES:-auto}"
 read -r -a gs_args <<<"${GS_ARGS---force-grab-cursor}"
 
 export STEAM_COMPAT_DATA_PATH="${STEAM_COMPAT_DATA_PATH:-$steam/steamapps/compatdata/205710}"
@@ -50,12 +52,26 @@ done
 if (( ${#chars[@]} > 0 && ${#chars[@]} != ${#tags[@]} )); then
     die "CHARS has ${#chars[@]} entries but TAGS has ${#tags[@]}"
 fi
-# Primary monitor size minus dock windows (panels/bars) docked to its edges.
+# Geometry "W H X Y" of the monitor showing 0-based desktop $1. dwm-titus gives
+# each monitor its own tags and publishes x,y,w,h,current-tag per monitor in
+# _DWM_MONITOR_DESKTOPS; other WMs fall back to the primary monitor.
+tag_monitor() {
+    local geom
+    geom="$(xprop -root _DWM_MONITOR_DESKTOPS 2>/dev/null | awk -F' = ' -v d="$1" 'NF == 2 {
+        n = split($2, v, ", ")
+        for (i = 1; i + 4 <= n; i += 5) if (v[i + 4] == d) { print v[i + 2], v[i + 3], v[i], v[i + 1]; exit }
+    }')"
+    if [[ -z "$geom" ]]; then
+        geom="$(xrandr --listactivemonitors | awk '$2 ~ /^\+\*/ { print $3; exit }')"
+        [[ "$geom" =~ ^([0-9]+)/[0-9]+x([0-9]+)/[0-9]+\+([0-9]+)\+([0-9]+)$ ]] || return 1
+        geom="${BASH_REMATCH[1]} ${BASH_REMATCH[2]} ${BASH_REMATCH[3]} ${BASH_REMATCH[4]}"
+    fi
+    printf '%s\n' "$geom"
+}
+
+# Monitor size (W H X Y) minus dock windows (panels/bars) docked to its edges.
 playable_area() {
-    local geom mw mh mx my w h x y id
-    geom="$(xrandr --listactivemonitors | awk '$2 ~ /^\+\*/ { print $3; exit }')"
-    [[ "$geom" =~ ^([0-9]+)/[0-9]+x([0-9]+)/[0-9]+\+([0-9]+)\+([0-9]+)$ ]] || return 1
-    mw="${BASH_REMATCH[1]}" mh="${BASH_REMATCH[2]}" mx="${BASH_REMATCH[3]}" my="${BASH_REMATCH[4]}"
+    local mw="$1" mh="$2" mx="$3" my="$4" w h x y id
     local top=0 bottom=0 left=0 right=0
     while read -r id w h x y; do
         (( x >= mx && y >= my && x + w <= mx + mw && y + h <= my + mh )) || continue
@@ -69,8 +85,8 @@ playable_area() {
     printf '%dx%d\n' "$((mw - left - right))" "$((mh - top - bottom))"
 }
 
-# Make EverQuest's window exactly fill gamescope's nested screen: windowed, no
-# offset (gamescope has no panel). eqclient.ini is shared by every client.
+# Size EverQuest's window to the tile/nested screen: windowed, no offset (the WM
+# or gamescope places it). eqclient.ini is shared by every client.
 set_eq_video() {
     local ini="$eq_dir/eqclient.ini" tmp
     [[ -f "$ini" ]] || return 0
@@ -107,15 +123,16 @@ set_eq_video() {
 
 if [[ "$use_gamescope" == 1 ]]; then
     command -v gamescope >/dev/null || die "missing gamescope (set GAMESCOPE=0 to run without it)"
-    if [[ "$gs_res" == auto ]]; then
-        for tool in xrandr xprop xwininfo; do
-            command -v "$tool" >/dev/null || die "GS_RES=auto needs $tool (or set GS_RES=WxH)"
-        done
-        gs_res="$(playable_area)" || die "could not detect the primary monitor (set GS_RES=WxH)"
-    fi
-    [[ "$gs_res" =~ ^([0-9]+)x([0-9]+)$ ]] || die "invalid GS_RES '$gs_res' (expected WxH or auto)"
-    gs_w="${BASH_REMATCH[1]}" gs_h="${BASH_REMATCH[2]}"
 fi
+(( ${#gs_res[@]} == 1 || ${#gs_res[@]} == ${#tags[@]} )) \
+    || die "GS_RES has ${#gs_res[@]} entries but TAGS has ${#tags[@]} (use one value or one per tag)"
+for res in "${gs_res[@]}"; do
+    [[ "$res" == auto || "$res" =~ ^[0-9]+x[0-9]+$ ]] || die "invalid GS_RES entry '$res' (expected WxH or auto)"
+    [[ "$res" == auto ]] || continue
+    for tool in xrandr xprop xwininfo; do
+        command -v "$tool" >/dev/null || die "GS_RES=auto needs $tool (or set GS_RES=WxH)"
+    done
+done
 for char in "${chars[@]}"; do
     [[ "$char" == - || "$char" =~ ^[^:]+:[^:]+$ ]] || die "invalid CHARS entry '$char' (expected server:character or -)"
 done
@@ -159,11 +176,6 @@ else
     sleep 15
 fi
 
-if [[ "$use_gamescope" == 1 ]]; then
-    printf 'gamescope resolution %dx%d\n' "$gs_w" "$gs_h"
-    set_eq_video "$gs_w" "$gs_h"
-fi
-
 client=0
 for tag in "${tags[@]}"; do
     client=$((client + 1))
@@ -174,6 +186,18 @@ for tag in "${tags[@]}"; do
     char="${chars[client - 1]:--}"
     [[ "$char" == - ]] || args+=("/login:$char")
     printf 'client %d: launching eqgame.exe %s (tag %d)\n' "$client" "${args[*]}" "$tag"
+    res="${gs_res[0]}"
+    (( ${#gs_res[@]} == 1 )) || res="${gs_res[client - 1]}"
+    if [[ "$res" == auto ]]; then
+        sleep 0.3 # let the WM publish the switched tag
+        read -r mon_w mon_h mon_x mon_y < <(tag_monitor "$((tag - 1))") \
+            || die "client $client: could not detect the monitor for tag $tag (set GS_RES=WxH)"
+        res="$(playable_area "$mon_w" "$mon_h" "$mon_x" "$mon_y")"
+    fi
+    gs_w="${res%x*}" gs_h="${res#*x}"
+    printf 'client %d: resolution %s\n' "$client" "$res"
+    # eqclient.ini is shared; EQ reads it at startup, before its window appears.
+    set_eq_video "$gs_w" "$gs_h"
     if [[ "$use_gamescope" == 1 ]]; then
         # Fixed inner (-w/-h) and outer (-W/-H) size; dwm may resize the outer window,
         # gamescope scales, and EQ never sees a mode change or focus loss.
