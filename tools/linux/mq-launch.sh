@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Start MacroQuest and N EverQuest clients under Proton, each on its own
 # tag/workspace: switch to the tag, launch, wait for the window, repeat (tools/linux/README.md, "Running (multibox)").
+# Existing clients are skipped, so rerunning the launcher fills missing slots.
 # Usage: tools/linux/mq-launch.sh
 #   TAGS            1-based tags, one client per entry (default: "3 4 5 6")
 #   CHARS           optional AutoLogin characters paired with TAGS, as server:character
@@ -56,7 +57,7 @@ export SteamAppId=205710 SteamGameId=205710
 
 die() { printf 'mq-launch: %s\n' "$*" >&2; exit 1; }
 
-for tool in wmctrl pgrep; do
+for tool in wmctrl pgrep flock ps; do
     command -v "$tool" >/dev/null || die "missing required tool: $tool"
 done
 [[ -n "${DISPLAY:-}" ]] || die "DISPLAY is not set (run from the X session)"
@@ -172,6 +173,60 @@ for char in "${chars[@]}"; do
     [[ "$char" == - || "$char" =~ ^[^:]+:[^:]+$ ]] || die "invalid CHARS entry '$char' (expected server:character or -)"
 done
 
+# Avoid overlapping launchers while a new process is still starting. Children
+# must close this descriptor so it is released once the launcher exits.
+mkdir -p "$instances"
+exec {launch_lock}>"$instances/.mq-launch.lock"
+flock -n "$launch_lock" || die "another launcher is already running"
+
+# Use live process identity, not the original window title (which changes
+# after login). A character can also have been moved to another workspace.
+existing_client() {
+    local tag="$1" wanted="$2" inst="$3" pid state cwd arg identity title desktop
+    local occupied_pid="" occupied_identity="" windows
+    if ! windows="$(wmctrl -lp)"; then
+        printf 'could not inspect existing windows\n' >&2
+        return 2
+    fi
+    while read -r pid; do
+        [[ -n "$pid" ]] || continue
+        state="$(ps -o stat= -p "$pid" 2>/dev/null || true)"
+        [[ -n "$state" && "$state" != Z* ]] || continue
+        cwd="$(readlink "/proc/$pid/cwd" 2>/dev/null || true)"
+        identity=""
+        # During startup there may be no character-specific window title yet.
+        if [[ -r "/proc/$pid/cmdline" ]]; then
+            while IFS= read -r -d '' arg; do
+                if [[ "${arg,,}" =~ ^/login:([^:]+):([^:]+)$ ]]; then
+                    identity="${BASH_REMATCH[1]}:${BASH_REMATCH[2]}"
+                fi
+            done < "/proc/$pid/cmdline" 2>/dev/null || true
+        fi
+        title="$(awk -v pid="$pid" '$3 == pid { sub(/^[^ ]+ +[^ ]+ +[^ ]+ +[^ ]+ +/, ""); print; exit }' <<<"$windows")"
+        if [[ "${title,,}" =~ ^([[:alnum:]_-]+)\.([[:alnum:]_-]+)[[:space:]]+\(lvl: ]]; then
+            identity="${BASH_REMATCH[2]}:${BASH_REMATCH[1]}"
+        fi
+        if [[ "$wanted" != - && "$identity" == "${wanted,,}" ]]; then
+            printf '%s\n' "$pid"
+            return 0
+        fi
+        desktop="$(awk -v pid="$pid" '$3 == pid { print $2; exit }' <<<"$windows")"
+        if [[ ( -n "$cwd" && "$cwd" -ef "$inst" ) || "$desktop" == "$((tag - 1))" ]]; then
+            occupied_pid="$pid"
+            occupied_identity="$identity"
+        fi
+    done < <(pgrep -x eqgame.exe || true)
+    if [[ -n "$occupied_pid" ]]; then
+        if [[ "$wanted" != - && -n "$occupied_identity" && "$occupied_identity" != "${wanted,,}" ]]; then
+            printf 'tag %s is occupied by a different EverQuest character (PID %s)\n' "$tag" "$occupied_pid" >&2
+            return 2
+        fi
+        printf '%s\n' "$occupied_pid"
+        return 0
+    fi
+    return 1
+}
+
 # Top-level window owned by a PID (gamescope's nested output window).
 pid_window() {
     wmctrl -lp | awk -v pid="$1" '$3 == pid { print $1; exit }'
@@ -227,19 +282,31 @@ if pgrep -f '^[A-Za-z]:\\.*\.exe /spawnedprocess' >/dev/null; then
     printf 'MacroQuest.exe already running\n'
 else
     printf 'starting MacroQuest.exe\n'
-    (cd "$mq_dir" && exec "$proton" run "$mq_dir/MacroQuest.exe") >/dev/null 2>&1 &
+    (exec {launch_lock}>&-; cd "$mq_dir" && exec "$proton" run "$mq_dir/MacroQuest.exe") >/dev/null 2>&1 &
     sleep 15
 fi
 
 client=0
+launched=0
+skipped=0
 first_win=""
+first_tag=""
 for tag in "${tags[@]}"; do
     client=$((client + 1))
+    char="${chars[client - 1]:--}"
+    inst="$instances/tag$tag"
+    if pid="$(existing_client "$tag" "$char" "$inst")"; then
+        printf 'client %d: already running (PID %s, requested tag %d); skipping\n' "$client" "$pid" "$tag"
+        skipped=$((skipped + 1))
+        continue
+    else
+        status=$?
+        (( status == 1 )) || die "cannot launch client $client on tag $tag"
+    fi
     # The WM's _NET_CURRENT_DESKTOP/_NET_WM_DESKTOP handlers take 0-based indexes.
     wmctrl -s "$((tag - 1))"
     # MQ2AutoLogin reads /login: and looks the character up in MacroQuest's login.db.
     args=(patchme)
-    char="${chars[client - 1]:--}"
     [[ "$char" == - ]] || args+=("/login:$char")
     printf 'client %d: launching eqgame.exe %s (tag %d)\n' "$client" "${args[*]}" "$tag"
     res="${gs_res[0]}"
@@ -252,7 +319,6 @@ for tag in "${tags[@]}"; do
     fi
     gs_w="${res%x*}" gs_h="${res#*x}"
     printf 'client %d: resolution %s\n' "$client" "$res"
-    inst="$instances/tag$tag"
     prepare_instance "$inst" || die "client $client: could not prepare $inst"
     set_eq_video "$inst" "$gs_w" "$gs_h"
     previous_start="$(head -n 1 "$inst/Logs/dbg.txt" 2>/dev/null || true)"
@@ -261,10 +327,10 @@ for tag in "${tags[@]}"; do
         # gamescope scales, and EQ never sees a mode change or focus loss.
         # no_new_privs drops gamescope's file CAP_SYS_NICE: two gamescopes with
         # realtime Vulkan queues fault NVIDIA GPUs (Xid 51 BAD_TSG; ublue-os/bazzite#6089).
-        (cd "$inst" && exec setpriv --no-new-privs gamescope -w "$gs_w" -h "$gs_h" -W "$gs_w" -H "$gs_h" "${gs_args[@]}" \
+        (exec {launch_lock}>&-; cd "$inst" && exec setpriv --no-new-privs gamescope -w "$gs_w" -h "$gs_h" -W "$gs_w" -H "$gs_h" "${gs_args[@]}" \
             -- "$proton" run "$inst/eqgame.exe" "${args[@]}") >"$inst/Logs/launch.log" 2>&1 &
     else
-        (cd "$inst" && exec "$proton" run "$inst/eqgame.exe" "${args[@]}") >"$inst/Logs/launch.log" 2>&1 &
+        (exec {launch_lock}>&-; cd "$inst" && exec "$proton" run "$inst/eqgame.exe" "${args[@]}") >"$inst/Logs/launch.log" 2>&1 &
     fi
     launcher_pid=$!
 
@@ -290,7 +356,8 @@ for tag in "${tags[@]}"; do
     # Pin it in case the tag changed before the window mapped.
     wmctrl -i -r "$win" -t "$((tag - 1))"
     printf 'client %d: window %s -> tag %d\n' "$client" "$win" "$tag"
-    [[ -n "$first_win" ]] || first_win="$win"
+    launched=$((launched + 1))
+    if [[ -z "$first_win" ]]; then first_win="$win"; first_tag="$tag"; fi
     if [[ "$use_gamescope" == 0 ]]; then
         wmctrl -i -a "$win"
         if [[ "$char" != - ]] && (( login_timeout > 0 )); then
@@ -300,6 +367,8 @@ for tag in "${tags[@]}"; do
 
     if (( client < ${#tags[@]} )); then sleep "$launch_delay"; fi
 done
-wmctrl -s "$((tags[0] - 1))"
-if [[ "$use_gamescope" == 0 ]]; then wmctrl -i -a "$first_win"; fi
-printf 'launched %d clients\n' "$client"
+if [[ -n "$first_win" ]]; then
+    wmctrl -s "$((first_tag - 1))"
+    if [[ "$use_gamescope" == 0 ]]; then wmctrl -i -a "$first_win"; fi
+fi
+printf 'launched %d clients; skipped %d already running\n' "$launched" "$skipped"

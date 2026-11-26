@@ -338,6 +338,11 @@ The `TAGS` values are 1-based workspace numbers. `CHARS` entries must match
 `TAGS` one for one, in the same order; use `-` for a manual login. The window
 manager must have the requested workspaces available (`wmctrl -d`).
 
+Rerun the same launcher command to fill missing slots after a client closes.
+It skips running characters, including ones moved to another workspace, and
+leaves their settings and windows alone. A slot occupied by a different
+character is reported as a conflict instead of launching a second client there.
+
 The default launcher uses plain Proton (no Gamescope) and waits for each
 AutoLogin character to finish entering the game before focusing and launching
 the next. This resolves the login stalls caused by switching focus too early.

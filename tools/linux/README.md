@@ -235,6 +235,11 @@ manager such as dwm-titus. Override `PROTON`, `EQ_DIR`, `MQ_DIR`,
 TAGS="3 4 5 6" tools/linux/mq-launch.sh
 ```
 
+Rerunning the launcher skips live client processes by character identity or
+their existing workspace/instance directory, and launches only missing slots.
+It does not change the video settings or move the windows of skipped clients.
+An occupied slot with a different known character is reported as a conflict.
+
 To auto-login, set `CHARS` to one `server:character` per tag (`-` skips a
 tag). Each client gets `/login:server:character`, which MQ2AutoLogin looks
 up in `config/login.db`. Add characters there from the MacroQuest tray menu
