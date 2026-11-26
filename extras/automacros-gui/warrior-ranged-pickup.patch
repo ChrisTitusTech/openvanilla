@@ -1,0 +1,218 @@
+--- a/warrior.lua
++++ b/warrior.lua
+@@ -225,6 +225,99 @@
+     if not (y and x and z and cy and cx and cz) then return false end
+     local radius=math.min(100,math.max(60,(r:get({},'AutoCampRadius') or 30)+40))
+     return chosen.distance<=100 and (y-cy)^2+(x-cx)^2+(z-cz)^2<=radius^2
++end
++-- Inspect the union of the NPCs around the tank and selected target.
++-- Never assume raw nearby spawn counts are all engaged enemies. The scan
++-- fails closed if positions or the native spawn API are unavailable.
++local function nearbyNPCs(r,radius)
++    local w=state(r);local now=mq.gettime();local id=num(r,'Target.ID')
++    local cached=w.nearby
++    if cached and cached.id==id and cached.radius==radius and now<cached.untilTime then return cached.ids end
++    if type(mq.getFilteredSpawns)~='function' then return nil end
++    local mx,my,mz=tonumber(read(r,'Me.X')),tonumber(read(r,'Me.Y')),tonumber(read(r,'Me.Z'))
++    local tx,ty,tz=tonumber(read(r,'Target.X')),tonumber(read(r,'Target.Y')),tonumber(read(r,'Target.Z'))
++    if not (mx and my and mz and tx and ty and tz) then return nil end
++    local rr=radius^2
++    local ok,near=pcall(mq.getFilteredSpawns,function(sp)
++        if sp.Type()~='NPC' then return false end
++        local x,y,z=sp.X(),sp.Y(),sp.Z()
++        return x and y and z and ((x-mx)^2+(y-my)^2+(z-mz)^2<=rr or (x-tx)^2+(y-ty)^2+(z-tz)^2<=rr)
++    end)
++    if not ok or type(near)~='table' then return nil end
++    local ids={};local seen={}
++    for _,sp in ipairs(near) do
++        local sid=sp.ID()
++        if sid and sid>0 and not seen[sid] then seen[sid]=true;ids[#ids+1]=sid end
++    end
++    w.nearby={id=id,radius=radius,ids=ids,untilTime=now+500}
++    return ids
++end
++function M.safeAreaAggro(r)
++    -- Area taunts remain useful on existing packs, but never acquire
++    -- bystanders. Use a conservative 60-unit union around both centers.
++    if (r.warriorHostileCount or 0)<2 then return false end
++    local ids=nearbyNPCs(r,60)
++    if not ids or #ids<2 then return false end
++    for _,id in ipairs(ids) do if not (r.warriorXTIds and r.warriorXTIds[id]) then return false end end
++    return true
++end
++local function pickup(r,chosen)
++    if chosen.source~='xtarget' or num(r,'Target.ID')~=chosen.id or
++        not yes(r,'Me.Standing') or num(r,'Me.Casting.ID')>0 or
++        not yes(r,'Target.LineOfSight') then return false end
++    local w=state(r);local t=mq.gettime()
++    if t<(w.nextPickup or 0) then return false end
++    local distance=tonumber(read(r,'Target.Distance3D')) or chosen.distance
++    local melee=num(r,'Target.MaxRangeTo')
++    if melee<=0 then return false end
++    local outside=distance>math.min(30,melee)
++    local needHate=chosen.aggro<100 or num(r,'Me.SecondaryPctAggro')>70
++    if not outside and not needHate then return false end
++    local safe
++    local function safePickup()
++        if not outside then return true end
++        if safe~=nil then return safe end
++        -- Do not tag remotely into a three-mob cluster, even when the
++        -- primary target is on XTarget. Normal camp engagement can proceed.
++        local near=nearbyNPCs(r,45)
++        local found=false
++        for _,id in ipairs(near or {}) do if id==chosen.id then found=true;break end end
++        safe=found and #near<3 and (r.warriorHostileCount or 0)<3
++        if not safe then
++            r:logAction('pickup-crowd','Warrior ranged pickup deferred target='..chosen.id..' nearby='..(near and #near or 'unknown'))
++        end
++        return safe
++    end
++    local function issued(name)
++        w.nextPickup=t+1200
++        r:log('Warrior pickup request ability='..name..' target='..chosen.id..' distance='..string.format('%.1f',distance)..' aggro='..chosen.aggro)
++        return true
++    end
++    local function aa(name)
++        local base='Me.AltAbility['..name..']'
++        local id=num(r,base..'.ID')
++        local range=num(r,base..'.Spell.MyRange')
++        if range<=0 then range=num(r,base..'.Spell.Range') end
++        if id<=0 or range<=0 or distance>range or not yes(r,'Me.AltAbilityReady['..name..']') then return false end
++        if not safePickup() then return false end
++        if action(r,'pickup-aa:'..id,3000,'/squelch /alt act '..id) then return issued(name) end
++        return false
++    end
++    local function disc(key)
++        local spell=r:get({},key)
++        if not spell or spell=='NULL' or not M.ready(r,spell) then return false end
++        local range=num(r,'Spell['..spell..'].MyRange')
++        if range<=0 then range=num(r,'Spell['..spell..'].Range') end
++        if range<=0 or distance>range or not safePickup() then return false end
++        if M.discipline(r,spell,false)=='PENDING' then return issued(spell) end
++        return false
++    end
++    -- A learned grasp actually pulls a straggler closer; use targeted hate
++    -- as the fallback. Never spend either on a non-XTarget NPC.
++    if outside and (aa("Warlord's Grasp") or aa('Grappling Strike')) then return true end
++    if not needHate then return false end
++    if not outside and yes(r,'Me.AbilityReady[Taunt]') and action(r,'ability:Taunt',1000,'/squelch /doability Taunt') then return issued('Taunt') end
++    return aa('Blast of Anger') or disc('taunt1') or disc('taunt2') or aa('Ageless Enmity')
+ end
+ function M.tick(r)
+     local w=state(r);local now=mq.gettime()
+@@ -283,6 +376,8 @@
+         end
+     else w.assistKey=nil end
+     r.warriorHostileCount=#list
++    r.warriorXTIds={}
++    for _,mob in ipairs(list) do if mob.source=='xtarget' then r.warriorXTIds[mob.id]=true end end
+     if #list==0 then
+         if w.firstHostile then r:log('Engagement ended');w.firstHostile=nil;w.confirmed=nil end
+         r.warriorBadAggro=0;r.warriorHardEncounter=false
+@@ -324,6 +419,7 @@
+         return
+     end
+     if r:get({},'UseMelee')==1 and chosen.hp<=(r:get({},'AutoAssistAt') or 100) then
++        pickup(r,chosen)
+         if not combat and (chosen.distance<60 or inCampEngagement(r,chosen)) then
+             if not yes(r,'Me.Standing') then action(r,'stand',500,'/stand');return end
+             if action(r,'attack',500,'/squelch /attack on') then
+--- a/war.lua
++++ b/war.lua
+@@ -113,21 +113,14 @@
+     end
+     end
+     local function aggro()
+-    -- --Aggro management
+-    if r:condition(s, [=[${SpawnCount[NPC radius 60 zradius 50]}>1&&${badaggro}>0&&${Me.CombatAbilityReady[${aeroar}]}]=]) then
++    -- Single-target pickup and threat are handled from confirmed XTargets
++    -- before the melee range gate. Area abilities must not pull bystanders.
++    if (r.warriorBadAggro or 0)>0 and r:condition(s, [=[${Me.CombatAbilityReady[${aeroar}]}]=]) and War.safeAreaAggro(r) then
+         r:invoke(s, [=[discnow]=], [=["${aeroar}"]=])
+-    elseif r:condition(s, [=[${SpawnCount[NPC radius 60 zradius 50]}>1&&${badaggro}>0&&${Me.CombatAbilityReady[${aehitall}]}]=]) then
++    elseif (r.warriorBadAggro or 0)>0 and r:condition(s, [=[${Me.CombatAbilityReady[${aehitall}]}]=]) and War.safeAreaAggro(r) then
+         r:invoke(s, [=[discnow]=], [=["${aehitall}"]=])
+-    elseif r:condition(s, [=[${SpawnCount[NPC radius 60 zradius 50]}>1&&${badaggro}>0&&${Me.AltAbilityReady[Area Taunt]}]=]) then
++    elseif (r.warriorBadAggro or 0)>0 and r:condition(s, [=[${Me.AltAbilityReady[Area Taunt]}]=]) and War.safeAreaAggro(r) then
+         r:invoke(s, [=[aanow]=], [=[110]=])
+-    elseif r:condition(s, [=[${Me.AbilityReady[Taunt]}&&${badaggro}>0 && ${Target.Distance}<30]=]) then
+-        r:invoke(s, [=[abilitynow]=], [=["Taunt"]=])
+-    elseif r:condition(s, [=[${Me.AltAbilityReady[Blast of Anger]} && ${Me.SecondaryPctAggro}>70 && ${Target.Distance}<80]=]) then
+-        r:invoke(s, [=[aanow]=], [=[3646]=])
+-    elseif r:condition(s, [=[${Me.CombatAbilityReady[${taunt1}]} && ${Me.SecondaryPctAggro}>70 && ${Me.Endurance}>500 && ${Target.Distance}<${Spell[${taunt1}].Range}]=]) then
+-        r:invoke(s, [=[discnow]=], [=["${taunt1}"]=])
+-    elseif r:condition(s, [=[${Me.CombatAbilityReady[${taunt2}]} && ${Me.SecondaryPctAggro}>70 && ${Me.Endurance}>500 && ${Target.Distance}<${Spell[${taunt2}].Range}]=]) then
+-        r:invoke(s, [=[discnow]=], [=["${taunt2}"]=])
+     end
+     end
+     if r:condition(s, [=[${Me.PctHPs}<30]=]) then defensive(); aggro() else aggro(); defensive() end
+--- a/tests/test.lua
++++ b/tests/test.lua
+@@ -394,6 +394,67 @@
+ end
+ print('PASS warrior bounded camp engagement beyond sixty units')
+
++-- A verified XTarget can be drawn into camp before melee starts. Refuse
++-- a remote tag if the target's or tank's surroundings contain a third NPC.
++do
++    local saved=mock.values;local oldScan=fake.getFilteredSpawns
++    mock.values={['Me.XTarget']=0,['Me.XTarget[1].ID']=0,['Me.Combat']='FALSE',
++        ['Me.GroupAssistTarget.ID']=0,['Group.MainAssist.ID']=0}
++    local w=setup('war');w:set({},'UseMelee',1);w:set({},'AutoAssistAt',100)
++    w:set({},'taunt1','Cyclone Roar Rk. II');w.funcs.checkaggro=function() end
++    w.funcs.sitcheck=function() end
++    local function value(key,v) mock.values[key]=v end
++    value('Me.XTarget',1);value('Me.XTargetSlots',13);value('Me.XTarget[1].ID',901)
++    value('Me.XTarget[1].Type','NPC');value('Me.XTarget[1].PctHPs',100)
++    value('Me.XTarget[1].Distance',80);value('Me.XTarget[1].PctAggro',10)
++    value('Target.ID',901);value('Target.Distance3D',80);value('Target.MaxRangeTo',20)
++    value('Target.LineOfSight','TRUE');value('Me.Standing','TRUE')
++    value('Me.X',0);value('Me.Y',0);value('Me.Z',5)
++    value('Target.X',80);value('Target.Y',0);value('Target.Z',5)
++    local function spawn(id,x,y)
++        return {ID=function() return id end,Type=function() return 'NPC' end,
++            X=function() return x end,Y=function() return y end,Z=function() return 5 end}
++    end
++    local target=spawn(901,80,0);local nearby={target}
++    fake.getFilteredSpawns=function(predicate)
++        local out={};for _,sp in ipairs(nearby) do if predicate(sp) then out[#out+1]=sp end end;return out
++    end
++    local function aa(name,id,range,ready)
++        value('Me.AltAbility['..name..'].ID',id)
++        value('Me.AltAbility['..name..'].Spell.MyRange',range)
++        value('Me.AltAbilityReady['..name..']',ready and 'TRUE' or 'FALSE')
++    end
++    aa("Warlord's Grasp",1234,100,true);aa('Blast of Anger',3646,80,true)
++    War.tick(w);eq(mock.commands[#mock.commands],'/squelch /alt act 1234','grasp picks up distant selected XTarget before melee')
++    local count=#mock.commands;mock.time=mock.time+100
++    War.tick(w);eq(#mock.commands,count,'pickup requests are paced')
++    aa("Warlord's Grasp",1234,100,false);mock.time=mock.time+1300
++    War.tick(w);eq(mock.commands[#mock.commands],'/squelch /alt act 3646','ranged hate fallback')
++    aa('Blast of Anger',3646,80,false);mock.time=mock.time+1300
++    value('Me.CombatAbilityReady[Cyclone Roar Rk. II]','TRUE');value('Spell[Cyclone Roar Rk. II].Range',100)
++    War.tick(w);eq(mock.commands[#mock.commands],'/doability "Cyclone Roar Rk. II"','learned targeted discipline fallback')
++    value('Me.CombatAbilityReady[Cyclone Roar Rk. II]','FALSE');War.updateDisc(w)
++    aa("Warlord's Grasp",1234,100,true);mock.time=mock.time+3300
++    nearby={target,spawn(902,84,0),spawn(903,86,0)};count=#mock.commands
++    War.tick(w);eq(#mock.commands,count,'do not remotely pull three NPCs together')
++    nearby={target,spawn(902,84,0),spawn(903,5,0)};mock.time=mock.time+600
++    War.tick(w);eq(#mock.commands,count,'count the union of tank and target surroundings')
++    nearby={target};mock.time=mock.time+600;value('Target.LineOfSight','FALSE')
++    War.tick(w);eq(#mock.commands,count,'no ranged ability through geometry')
++    value('Target.LineOfSight','TRUE');aa("Warlord's Grasp",1234,70,true)
++    War.tick(w);eq(#mock.commands,count,'respect actual ability range')
++    nearby={target,spawn(902,84,0),spawn(903,86,0)};mock.time=mock.time+600
++    w.warriorHostileCount=2;w.warriorXTIds={[901]=true,[902]=true}
++    eq(War.safeAreaAggro(w),false,'area threat cannot acquire a neutral bystander')
++    nearby={target,spawn(902,84,0)};mock.time=mock.time+600
++    eq(War.safeAreaAggro(w),true,'two already engaged NPCs can receive area threat')
++    nearby={target,spawn(902,84,0),spawn(903,86,0)};mock.time=mock.time+600
++    w.warriorHostileCount=3;w.warriorXTIds[903]=true
++    eq(War.safeAreaAggro(w),true,'continue tanking three already engaged mobs without pulling new ones')
++    fake.getFilteredSpawns=oldScan;mock.values=saved
++end
++print('PASS warrior single-target ranged pickup and crowd-safe area threat')
++
+ -- Discipline retry pacing and async confirmation, with engagement unaffected during pending activation.
+ local spell='Stout Defense Rk. II'
+ mock.values['Me.ActiveDisc.Name']='NULL'

@@ -228,6 +228,22 @@ patch --dry-run -p1 < "$overlay/warrior-camp-engagement.patch"
 patch -p1 < "$overlay/warrior-camp-engagement.patch"
 ```
 
+Apply `warrior-ranged-pickup.patch` next. Before starting melee, the warrior
+may draw a confirmed living extended target toward camp with a learned
+Warlord's Grasp or Grappling Strike AA, or use single-target hate (Blast
+of Anger, learned Roar/Shout discipline, Ageless Enmity). It checks actual
+ability range, line of sight and readiness. A native spawn scan covering
+45 units around both the tank and target defers distant pickup if three
+or more NPCs are present or the local encounter already has three mobs.
+Normal melee taunt still works. Area hate abilities are eligible only
+when at least two NPCs within 60 units of either center are already on
+XTarget and there are no untracked NPCs in those areas.
+
+```bash
+patch --dry-run -p1 < "$overlay/warrior-ranged-pickup.patch"
+patch -p1 < "$overlay/warrior-ranged-pickup.patch"
+```
+
 ## Monk AutoLua
 
 The new native Lua class module is selected automatically on a monk by
