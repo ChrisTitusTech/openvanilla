@@ -12,7 +12,7 @@ window opens automatically. Close or hide it without stopping the script;
 current startup phase and elapsed time. Settings become visible as soon as
 they are loaded and unlock once the runtime can process changes.
 
-- All classes: melee (MQ2Melee handoff for Monk), return to camp, camp
+- All classes: auto melee, return to camp, camp
   radius, assist HP, follow, fellowship, instant release, verbose
   notifications and backoff.
 - Bard: slow, mez and bring your own spells.
@@ -116,21 +116,21 @@ The monk uses **Distant Strike** when ready, falling back to **Throw Stone**.
 It resolves the actual AA ID, confirms its target and ability activation
 using casting/cooldown state, and retries or moves closer until aggro is
 confirmed (default timeout 15 seconds). Confirmed activation gets a
-three-second aggro grace period before a fallback approach. During the
-outbound and return navigation, AutoLua temporarily suspends an already
-enabled MQ2Melee so its automatic feign-death and combat behavior cannot
-interrupt the pull. It restores the plugin's prior enabled state at camp
-or on cancellation, without saving changes to MQ2Melee's configuration.
-A manual feign or invisibility pauses navigation and retains the return
-state until the monk is standing and visible again.
+three-second aggro grace period before a fallback approach. AutoLua
+disables MQ2Melee throughout the entire monk session, including in camp,
+during combat, when pulling is off, and when zoning. On a graceful
+AutoLua stop, it restores the plugin's original enabled state without
+saving changes to MQ2Melee's configuration. A manual feign or invisibility
+pauses navigation and retains the return state until the monk is standing
+and visible again.
 
 At camp, the monk scans all occupied extended-target slots for living
 NPCs. It prioritizes an eligible group assist target, otherwise the
-lowest-health eligible NPC, and hands the confirmed target to MQ2Melee
-using `/killthis`. Other mobs already in camp can be fought immediately,
-even while the pulled mob is still on its way. MQ2Melee handles all
-attack, stick, abilities, disciplines and AA usage, and AutoLua does not
-interrupt a live MQ2Melee engagement. The next pull waits for
+lowest-health eligible NPC, confirms the target, and controls basic attack
+and stick directly. Other mobs already in camp can be fought immediately,
+even while the pulled mob is still on its way. After a target dies, AutoLua
+releases its attack and stick before engaging the next NPC. No combat
+discipline or AA rotation is implemented. The next pull waits for
 combat to finish and for
 monk/group health (default 80%), endurance (50%) and healer mana (50%).
 If the group starts fighting or falls below readiness during approach,
@@ -144,10 +144,12 @@ Commands:
 - `/autolua pullradius 200` sets a radius from 50 to 10000 units.
 - `/autolua pullstatus` displays the current state.
 - `/autolua camphere` re-anchors camp and `/autolua campoff` clears it.
-- `/autolua backoff` stops pulling and future MQ2Melee handoffs;
-  `/autolua stop` stops the script and its owned navigation. The GUI
-  Stop AutoLua button does the same. Existing MQ2Melee combat is left
-  to the plugin and its own controls.
+- `/autolua meleeoff` disables basic auto melee without enabling MQ2Melee.
+- `/autolua backoff` stops pulling and auto melee; MQ2Melee remains off.
+- `/autolua stop` stops the script, releases its owned attack, stick
+  and navigation, and restores MQ2Melee's previous enabled state.
+  The GUI Stop AutoLua button does the same. Use graceful stop rather
+  than forcibly terminating the Lua process to ensure cleanup.
 
 For an already-installed GUI/Selo overlay, apply only
 `monk-integration.patch`, copy the updated `gui.lua`, new `mnk.lua`, and
@@ -155,7 +157,7 @@ For an already-installed GUI/Selo overlay, apply only
 offline suite exercises the pull cycle, 3D camp coordinates, group
 readiness, native spawn enumeration, path ranking, AA activation and
 retry, rescan, feign pause/resume, plugin suspension/restoration, multi-target
-combat handoff, mob-arrival wait, GUI persistence, timeout, cancellation,
+camp combat, mob-arrival wait, GUI persistence, timeout, cancellation,
 and zone invalidation. Existing character INI settings are preserved
 when upgrading; the new path limit and timeout are initialized on first
 run. Live pathing and ability activation still need verification in the
