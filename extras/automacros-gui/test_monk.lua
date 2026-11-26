@@ -763,12 +763,15 @@ return function(setup,mock,eq)
     local Obs=require('automacros.observer');local logic=require('automacros.mnk')
     local oldEnsure,oldRead=Obs.ensure,Obs.read
     local responses={}
-    Obs.ensure=function() end;Obs.read=function(_,key) return responses[key] end
-    value('Spawn[id 501].Named','TRUE');value('Group.Members',3)
-    value('Group.Member[1].Class.ShortName','WAR');value('Group.Member[1].ID',10);value('Group.Member[1].Name','Tank')
-    value('Group.Member[2].Class.ShortName','CLR');value('Group.Member[2].ID',11);value('Group.Member[2].Name','Healer')
-    value('Group.Member[3].Class.ShortName','BRD');value('Group.Member[3].ID',12);value('Group.Member[3].Name','Bard')
+    local observedPeers={}
+    Obs.ensure=function(_,key,peer) observedPeers[key]=peer end;Obs.read=function(_,key) return responses[key] end
+    value('Spawn[id 501].Named','TRUE');value('Group.Members',4)
+    value('Group.Member[1].Class.ShortName','CLR');value('Group.Member[1].ID',13);value('Group.Member[1].Name','a clockwork soother');value('Group.Member[1].Mercenary','TRUE')
+    value('Group.Member[2].Class.ShortName','WAR');value('Group.Member[2].ID',10);value('Group.Member[2].Name','Tank')
+    value('Group.Member[3].Class.ShortName','CLR');value('Group.Member[3].ID',11);value('Group.Member[3].Name','Healer')
+    value('Group.Member[4].Class.ShortName','BRD');value('Group.Member[4].ID',12);value('Group.Member[4].Name','Bard')
     eq(logic.namedPullReady(monk,501),false,'wait for fresh named readiness data')
+    eq(observedPeers.namedClrDefense,'Healer','observe player cleric rather than mercenary')
     responses.namedWarDefense={'autolua-war-defense','10','1','FALSE','2','TRUE','3','TRUE','4','TRUE','1'}
     responses.namedClrDefense={'autolua-clr-defense','11','TRUE','FALSE','1'}
     responses.namedBrdDefense={'autolua-brd-defense','12','FALSE','TRUE','1'}

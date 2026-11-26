@@ -350,9 +350,10 @@ function M.namedPullReady(r,id,diagnostic)
     local waitReason
     for i=1,math.min(5,num('Group.Members')) do
         local e='Group.Member['..i..']';local class=read(e..'.Class.ShortName');local role=roles[class]
-        if role and not checked[class] then
+        local name=read(e..'.Name')
+        if role and not checked[class] and not yes(e..'.Mercenary') and name:match('^[%w_%-]+$') and name~='NULL' then
             checked[class]=true
-            local memberId=num(e..'.ID');local name=read(e..'.Name')
+            local memberId=num(e..'.ID')
             Obs.ensure(r,role.key,name,role.query,memberId)
             local payload=Obs.read(r,role.key)
             local ready=false
