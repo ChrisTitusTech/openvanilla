@@ -1,0 +1,160 @@
+--- a/warrior.lua
++++ b/warrior.lua
+@@ -138,7 +138,7 @@
+ -- showed dangerous HP dips before the legacy 30% emergency threshold.
+ function M.mitigate(r,hard)
+     local hp=num(r,'Me.PctHPs')
+-    hard=hard or r.warriorHardEncounter
++    if hard==nil then hard=r.warriorHardEncounter end
+     if hp<=0 or (not hard and hp>75) then return false end
+     local w=state(r)
+     local active=read(r,'Me.ActiveDisc.Name')
+@@ -161,16 +161,16 @@
+         end
+         return false
+     end
+-    -- Known confirmed absorption is first, and emergency avoidance can
+-    -- replace only an empty or lower AC-defense slot, not a strong active disc.
++    -- Long defensive cooldowns are reserved for named or three-plus actual
++    -- encounter NPCs. Routine absorption and short Flash of Anger remain
++    -- available on ordinary fights; never overwrite a strong active disc.
+     if hard and disc('meleemit',100,true) then return true end
+-    if aa('Brace for Impact',1686,hard and 100 or 75) then return true end
++    if hard and aa('Brace for Impact',1686,100) then return true end
+     if disc('absorball',hard and 85 or 65,false) then return true end
+-    if aa("Warlord's Tenacity",300,hard and 75 or 50) then return true end
++    if hard and aa("Warlord's Tenacity",300,75) then return true end
+     if hard and disc('bmdisc',80,false) then return true end
+     if disc('parryall',50,true) then return true end
+-    if disc('meleemit',45,true) then return true end
+-    if disc('missall',35,true) then return true end
++    if hard and disc('missall',35,true) then return true end
+     if hp<=40 then
+         r:logAction('mitigation-unavailable','Mitigation critical hp='..hp..' active='..active..
+             ' pending='..tostring(w.pending and w.pending.spell or 'none')..
+@@ -197,12 +197,13 @@
+     local count=num(r,'Me.XTarget')
+     if count<=0 and num(r,'Me.XTarget[1].ID')<=0 then return list end
+     local slots=math.min(40,math.max(count,1,num(r,'Me.XTargetSlots')))
+-    local seen=0
++    local seen,ids=0,{}
+     for i=1,slots do
+         local e='Me.XTarget['..i..']'
+         local id=num(r,e..'.ID')
+         if id>0 then seen=seen+1 end
+-        if id>0 and read(r,e..'.Type')=='NPC' then
++        if id>0 and not ids[id] and read(r,e..'.Type')=='NPC' then
++            ids[id]=true
+             local hp,dist=num(r,e..'.PctHPs'),num(r,e..'.Distance')
+             if hp>0 and dist<=100 then
+                 list[#list+1]={id=id,hp=hp,distance=dist,aggro=num(r,e..'.PctAggro'),named=yes(r,e..'.Named'),source='xtarget'}
+@@ -265,9 +266,10 @@
+             r:log('Assist candidate id='..assistId..' source='..source..' reason='..reason..' distance='..dist..' hp='..hp..' in_xtarget='..tostring(assistListed))
+         end
+         if reason=='eligible' and not assistListed then
+-            list[#list+1]={id=assistId,hp=hp,distance=dist,aggro=100,source=source}
++            list[#list+1]={id=assistId,hp=hp,distance=dist,aggro=100,named=yes(r,base..'.Named'),source=source}
+         end
+     else w.assistKey=nil end
++    r.warriorHostileCount=#list
+     if #list==0 then
+         if w.firstHostile then r:log('Engagement ended');w.firstHostile=nil;w.confirmed=nil end
+         r.warriorBadAggro=0;r.warriorHardEncounter=false
+@@ -278,6 +280,9 @@
+     w.firstHostile=w.firstHostile or now
+     local hard=#list>=3
+     for _,mob in ipairs(list) do if mob.named then hard=true;break end end
++    if r.warriorHardEncounter~=hard then
++        r:log('Warrior defense policy hard='..tostring(hard)..' hostile_count='..#list)
++    end
+     r.warriorHardEncounter=hard
+     -- Start defense before target/attack setup when a pack reaches range.
+     if hard and M.mitigate(r,true) then return end
+--- a/war.lua
++++ b/war.lua
+@@ -100,28 +100,15 @@
+     r:set(s, "badaggro", r.warriorBadAggro or 0)
+     if War.mitigate(r) then return end
+     local function defensive()
+-    -- --Defensive setup
+-    if r:condition(s, [=[(${SpawnCount[NPC radius 60 zradius 50]}>2||${Target.Named}) && ${Me.CombatAbilityReady[${meleemit}]} && (${Me.ActiveDisc.Name.Find[Defense]}||!${Me.ActiveDisc.ID})]=]) then
+-        r:invoke(s, [=[discqueue]=], [=["${meleemit}"]=])
+-    elseif r:condition(s, [=[${Me.PctHPs}<30 && ${Me.CombatAbilityReady[${absorball}]}]=]) then
+-        r:invoke(s, [=[discnow]=], [=["${absorball}"]=])
+-    elseif r:condition(s, [=[(${SpawnCount[NPC radius 60 zradius 50]}>2||${Target.Named}) && ${Me.CombatAbilityReady[${parryall}]} && (${Me.ActiveDisc.Name.Find[Defense]}||!${Me.ActiveDisc.ID})]=]) then
+-        r:invoke(s, [=[discqueue]=], [=["${parryall}"]=])
+-    elseif r:condition(s, [=[(${SpawnCount[NPC radius 60 zradius 50]}>3||${Target.Named}) && ${Me.CombatAbilityReady[${missall}]} && (${Me.ActiveDisc.Name.Find[Defense]}||!${Me.ActiveDisc.ID})]=]) then
+-        r:invoke(s, [=[discqueue]=], [=["${missall}"]=])
+-    elseif r:condition(s, [=[(${SpawnCount[NPC radius 60 zradius 50]}>2||${Target.Named}) && ${Me.CombatAbilityReady[${bmdisc}]} && ${Me.PctEndurance}>20]=]) then
+-        r:invoke(s, [=[discnow]=], [=["${bmdisc}"]=])
+-    elseif r:condition(s, [=[(${SpawnCount[NPC radius 60 zradius 50]}>2||${Target.Named}) && !${Me.Buff[Brace for Impact].ID} && ${Me.AltAbilityReady[Brace for Impact]}]=]) then
+-        r:invoke(s, [=[aanow]=], [=[1686]=])
+-    elseif r:condition(s, [=[(${SpawnCount[NPC radius 60 zradius 50]}>2||${Target.Named}) && !${Me.Buff[Brace for Impact].ID} && ${Me.AltAbilityReady[Warlord's Tenacity]}]=]) then
+-        r:invoke(s, [=[aanow]=], [=[300]=])
+-    elseif r:condition(s, [=[(${SpawnCount[NPC radius 60 zradius 50]}>1||${Target.Named}) && !${Me.Buff[Warlord's Tenacity].ID} && ${Me.AltAbilityReady[Imperator's Command]}]=]) then
++    -- Major defensive cooldowns are scheduled exclusively by War.mitigate.
++    -- Never count neutral/bystander spawns as engaged mobs.
++    if r.warriorHardEncounter and r:condition(s, [=[!${Me.Buff[Warlord's Tenacity].ID} && ${Me.AltAbilityReady[Imperator's Command]}]=]) then
+         r:invoke(s, [=[aanow]=], [=[2011]=])
+-    elseif r:condition(s, [=[(${SpawnCount[NPC radius 60 zradius 50]}>1||${Target.Named}) && ${Me.CombatAbilityReady[${aehealhate}]} && !${Me.Buff[${aehealhate}].ID} && !${Me.Buff[${aeselfbuff}].ID} && ${Me.PctEndurance}>10]=]) then
++    elseif (r.warriorHostileCount or 0)>=2 and r:condition(s, [=[${Me.CombatAbilityReady[${aehealhate}]} && !${Me.Buff[${aehealhate}].ID} && !${Me.Buff[${aeselfbuff}].ID} && ${Me.PctEndurance}>10]=]) then
+         r:invoke(s, [=[discnow]=], [=["${aehealhate}"]=])
+-    elseif r:condition(s, [=[(${SpawnCount[NPC radius 60 zradius 50]}>1||${Target.Named}) && ${Me.CombatAbilityReady[${aeselfbuff}]} && !${Me.Buff[${aehealhate}].ID} && !${Me.Buff[${aeselfbuff}].ID} && ${Me.PctEndurance}>10]=]) then
++    elseif (r.warriorHostileCount or 0)>=2 and r:condition(s, [=[${Me.CombatAbilityReady[${aeselfbuff}]} && !${Me.Buff[${aehealhate}].ID} && !${Me.Buff[${aeselfbuff}].ID} && ${Me.PctEndurance}>10]=]) then
+         r:invoke(s, [=[discnow]=], [=["${aeselfbuff}"]=])
+-    elseif r:condition(s, [=[!${Me.ActiveDisc.ID} && ${Me.CombatAbilityReady[${defenseac}]} && ${SpawnCount[NPC radius 60 zradius 50]}>=1]=]) then
++    elseif (r.warriorHostileCount or 0)>=1 and r:condition(s, [=[!${Me.ActiveDisc.ID} && ${Me.CombatAbilityReady[${defenseac}]}]=]) then
+         r:invoke(s, [=[discqueue]=], [=["${defenseac}"]=])
+     end
+     end
+--- a/tests/test.lua
++++ b/tests/test.lua
+@@ -784,6 +784,48 @@
+ mock.values['Me.CombatAbilityReady[Last Stand Discipline Rk. II]']='FALSE'
+ mock.values['Me.ActiveDisc.Name']='NULL'
+
++-- A low-health ordinary encounter must not spend long defensive cooldowns.
++-- The count is unique living hostile NPCs, not the number of nearby spawns.
++do
++    local saved=mock.values
++    mock.values={['Me.PctHPs']='30',['Me.Combat']='TRUE',['Me.Standing']='TRUE',
++        ['Me.ActiveDisc.Name']='NULL',['Me.Endurance']='10000',['Me.XTargetSlots']='13',
++        ['Group.MainAssist.ID']='0',['Me.GroupAssistTarget.ID']='0',['Target.ID']='801',
++        ['SpawnCount[NPC radius 60 zradius 50]']='12'}
++    local w=setup('war')
++    w.funcs.checkaggro=function() end;w.funcs.sitcheck=function() end
++    w:set({},'meleemit','Last Stand Discipline Rk. II');w:set({},'missall','Fortitude Discipline')
++    w:set({},'bmdisc','Dichotomic Shield')
++    for _,spell in ipairs({'Last Stand Discipline Rk. II','Fortitude Discipline','Dichotomic Shield'}) do
++        mock.values['Me.CombatAbilityReady['..spell..']']='TRUE'
++    end
++    mock.values['Me.AltAbilityReady[Brace for Impact]']='TRUE'
++    mock.values["Me.AltAbilityReady[Warlord's Tenacity]"]='TRUE'
++    local function enemy(slot,id,named,hp,dist)
++        local e='Me.XTarget['..slot..']'
++        mock.values[e..'.ID']=id;mock.values[e..'.Type']='NPC';mock.values[e..'.PctHPs']=hp
++        mock.values[e..'.Distance']=dist;mock.values[e..'.Named']=named and 'TRUE' or 'FALSE'
++        mock.values[e..'.PctAggro']=100
++    end
++    enemy(1,801,false,100,10);mock.values['Me.XTarget']=1
++    War.tick(w);eq(w.warriorHardEncounter,false,'one mob with nearby bystanders is not a hard fight')
++    eq(War.mitigate(w),false,'save long defense even at 30 percent on one ordinary mob')
++    enemy(4,802,false,100,15);enemy(7,802,false,100,15);mock.values['Me.XTarget']=3
++    War.tick(w);eq(w.warriorHostileCount,2,'duplicate NPC does not inflate count')
++    eq(w.warriorHardEncounter,false,'two distinct ordinary mobs do not spend major defense')
++    enemy(7,803,false,100,150);War.tick(w);eq(w.warriorHardEncounter,false,'distant NPC does not inflate count')
++    enemy(7,803,false,100,20);War.tick(w);eq(w.warriorHardEncounter,true,'three distinct hostile NPCs trigger major defense')
++    eq(mock.commands[#mock.commands],'/doability "Last Stand Discipline Rk. II"','three mobs start Last Stand')
++    local named=setup('war');named:set({},'meleemit','Last Stand Discipline Rk. II')
++    named.funcs.checkaggro=function() end;named.funcs.sitcheck=function() end
++    enemy(1,801,true,100,10);mock.values['Me.XTarget']=1
++    mock.values['Me.PctHPs']='100'
++    War.tick(named);eq(named.warriorHardEncounter,true,'one named NPC triggers major defense')
++    eq(mock.commands[#mock.commands],'/doability "Last Stand Discipline Rk. II"','named starts Last Stand')
++    mock.values=saved
++end
++print('PASS warrior named and three-hostile long-defense policy')
++
+ -- Defense family can be confirmed by its effect even if the UI label
+ -- and readiness report are unreliable. Record diagnostic equipment data.
+ local dia=setup('war')

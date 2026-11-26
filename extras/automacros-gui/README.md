@@ -204,6 +204,19 @@ patch --dry-run -p1 < "$overlay/named-pull-readiness.patch"
 patch -p1 < "$overlay/named-pull-readiness.patch"
 ```
 
+Apply `warrior-defense-policy.patch` after `named-pull-readiness.patch`.
+Long defensive cooldowns (Last Stand, Fortitude, Dichotomic Shield,
+Brace for Impact, Warlord's Tenacity and Imperator's Command) are reserved
+for named NPCs or at least three distinct living hostile NPCs within
+100 units. Nearby neutral spawns and duplicate extended-target slots do
+not count. Routine AC defense, absorption, shield reactions and short
+emergency Flash of Anger remain available on ordinary encounters.
+
+```bash
+patch --dry-run -p1 < "$overlay/warrior-defense-policy.patch"
+patch -p1 < "$overlay/warrior-defense-policy.patch"
+```
+
 ## Monk AutoLua
 
 The new native Lua class module is selected automatically on a monk by
