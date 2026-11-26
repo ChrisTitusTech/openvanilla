@@ -13,6 +13,7 @@ local settings = {
     {'PullMaxPath','int',1000}, {'PullTimeout','int',15},
     {'PullMinHP','int',80}, {'PullMinEndurance','int',50},
     {'PullMinHealerMana','int',50}, {'PullName','string','NULL'},
+    {'MonkUseAbilities','int',1}, {'MonkBurnAll','int',0},
 }
 local function read(expr) return mq.parse('${'..expr..'}') end
 local function num(expr) return tonumber(read(expr)) or 0 end
@@ -86,7 +87,7 @@ end
 local function stopCombat(r,s)
     if s.attackOwned then command(r,'/squelch /attack off') end
     if s.stickOwned then command(r,'/stick off') end
-    s.attackOwned=nil;s.stickOwned=nil;s.combatId=nil;s.nextAttack=nil;s.nextStick=nil
+    s.attackOwned=nil;s.stickOwned=nil;s.combatId=nil;s.combatStarted=nil;s.nextAttack=nil;s.nextStick=nil
 end
 local function reset(r,s,message)
     stopNav(r,s);stopCombat(r,s)
@@ -337,8 +338,196 @@ local function observeAction(r,s,t)
     end
 end
 
+-- Highest learned discipline in each family. Order is newest to oldest,
+-- not cooldown order. The client is authoritative for rank and ownership.
+local discFamilies={
+    aura={"Master's Aura","Disciple's Aura"},
+    recovery={"Breather","Rest","Reprieve","Respite"},
+    combatRecovery={"Hiatus V","Convalesce","Night's Calming","Relax","Hiatus"},
+    wind={"Fourth Wind","Third Wind","Second Wind"},
+    breaths={"Moment of Stillness","Breath of Stillness","Breath of Tranquility","Nine Breaths","Eight Breaths","Seven Breaths","Six Breaths","Five Breaths"},
+    form={"Diametric Form","Reciprocal Form","Ecliptic Form","Composite Form","Dissident Form","Dichotomic Form"},
+    drunken={"Drunken Monkey Style"},
+    curse={"Curse of Eighteen Desires","Curse of Seventeen Facets","Curse of Sixteen Shadows","Curse of Fifteen Strikes","Curse of Fourteen Fists","Curse of the Thirteen Fingers"},
+    fang={"Uncia's Fang","Zlexak's Fang","Hoshkar's Fang","Zalikor's Fang","Dragon Fang"},
+    fists={"Wheel of Fists XII","Flurry of Fists","Buffeting of Fists","Barrage of Fists","Firestorm of Fists","Torrent of Fists","Eight-Step Pattern","Seven-Step Pattern","Six-Step Pattern","Whorl of Fists","Wheel of Fists","Clawstriker Flurry","Leopard Claw"},
+    phantom={"Phantom Fisticuffs","Phantom Pummeling","Phantom Partisan","Cloud of Fists"},
+    precision={"Lifewalker's Precision Strike","Fatewalker's Precision Strike","Bloodwalker's Precision Strike","Icewalker's Precision Strike","Firewalker's Precision Strike","Doomwalker's Precision Strike"},
+    shuriken={"Vigorous Shuriken"},
+    synergy={"Lifewalker's Synergy","Fatewalker's Synergy","Bloodwalker's Synergy","Icewalker's Synergy","Firewalker's Synergy","Doomwalker's Synergy","Shadewalker's Synergy","Veilwalker's Synergy","Dreamwalker's Synergy","Calanin's Synergy"},
+    storm={"Eye of the Storm"},
+    wu={"Fists of Wu"},
+    earth={"Earthforce Discipline","Earthwalk Discipline"},
+    shade={"Shaded Step","Void Step"},
+    death={"Delay Death XI","Defy Death","Repeal Death","Rescind Death","Reject Death","Refuse Death","Forestall Death","Decry Death","Deny Death","Defer Death","Delay Death"},
+    dodge={"Veiled Body","Void Body"},
+    iron={"Ironfist Discipline","Scaledfist Discipline","Ashenhand Discipline"},
+    heel={"Heel of Zagali","Heel of Kojai","Heel of Kai","Rapid Kick Discipline","Heel of Kanji"},
+    speed={"Speed Focus Discipline","Hundred Fists Discipline"},
+    palm={"Terrorpalm Discipline","Diamondpalm Discipline","Crystalpalm Discipline","Innerflame Discipline"},
+    stance={"Heron Stance","Crane Stance"},
+    balance={"Eagle's Symmetry","Tiger's Symmetry","Dragon's Poise","Eagle's Poise","Tiger's Poise","Dragon's Balance"},
+}
+local aaNames={"Purify Body","Zan Fi's Whistle","Two-Finger Wasp Touch","Five Point Palm",
+    "Ton Po's Stance","Spire of the Sensei","Infusion of Thunder","Focused Destructive Force","Silent Strikes","Swift Tails' Chant"}
+local skillNames={"Mend","Flying Kick","Round Kick","Kick","Tiger Claw","Eagle Strike","Dragon Punch","Tail Rake","Intimidation"}
+local function present(value) return value and value~='' and value~='NULL' end
+local function baseName(name) return (name:gsub(' Rk%. I+$','')) end
+local function discoverAbilities(r,s)
+    local learned,disc,aa,skill={},{},{},{}
+    -- CombatAbility[n] returns the learned spell (whereas [name] returns
+    -- its index). Enumerate once, not a full name/rank scan every pulse.
+    for i=1,400 do
+        local name=read('Me.CombatAbility['..i..'].Name')
+        if present(name) then
+            local base=baseName(name):lower()
+            local rank=name:match(' Rk%. III$') and 3 or (name:match(' Rk%. II$') and 2 or 1)
+            if not learned[base] or rank>learned[base].rank then learned[base]={name=name,rank=rank} end
+        end
+    end
+    local summary,classified={},{}
+    for family,names in pairs(discFamilies) do
+        for _,base in ipairs(names) do
+            local spell=learned[base:lower()]
+            if spell then
+                classified[base:lower()]=true
+                if not disc[family] then
+                    local name=spell.name
+                    disc[family]={kind='disc',name=name,ready='Me.CombatAbilityReady['..name..']',
+                        line=string.format('/doability %q',name),spell=name,
+                        cost=num('Spell['..name..'].EnduranceCost'),
+                        cast=num('Spell['..name..'].MyCastTime.Raw'),
+                        trigger=read('Spell['..name..'].Trigger[1].Name')}
+                    summary[#summary+1]=family..'='..name
+                end
+            end
+        end
+    end
+    for _,name in ipairs(aaNames) do
+        local e='Me.AltAbility['..name..']'
+        local id=num(e..'.ID')
+        if id>0 then
+            aa[name]={kind='aa',name=name,ready='Me.AltAbilityReady['..name..']',
+                line='/alt act '..id,spell=read(e..'.Spell.Name'),cast=num(e..'.Spell.MyCastTime.Raw'),
+                trigger=read(e..'.Spell.Trigger[1].Name')}
+            summary[#summary+1]='AA='..name
+        end
+    end
+    for _,name in ipairs(skillNames) do
+        if num('Me.Skill['..name..']')>0 then
+            skill[name]={kind='skill',name=name,ready='Me.AbilityReady['..name..']',
+                line='/doability '..name,cast=0}
+            summary[#summary+1]='skill='..name
+        end
+    end
+    table.sort(summary)
+    s.abilities={disc=disc,aa=aa,skill=skill};s.abilityRetry={};s.abilityPending=nil
+    s.abilityLevel=num('Me.Level');s.nextAbilityScan=now()+300000
+    r:log('Monk abilities resolved: '..(#summary>0 and table.concat(summary,'; ') or 'no classified abilities learned'))
+    local unclassified={}
+    for base,entry in pairs(learned) do
+        if not classified[base] then unclassified[#unclassified+1]=entry.name end
+    end
+    if #unclassified>0 then
+        table.sort(unclassified)
+        r:log('Monk learned disciplines not auto-used: '..table.concat(unclassified,'; '))
+    end
+end
+local function discActive()
+    return num('Me.ActiveDisc.ID')>0 or present(read('Me.ActiveDisc.Name'))
+end
+local function buffActive(name)
+    return present(name) and (num('Me.Buff['..name..'].ID')>0 or num('Me.Song['..name..'].ID')>0)
+end
+local function observeAbility(r,s,t)
+    local p=s.abilityPending
+    if not p then return end
+    local a=p.ability
+    if read(a.ready)=='FALSE' or (a.kind=='disc' and read('Me.ActiveDisc.Name')==a.name) or
+       (a.cast>0 and num('Me.Casting.ID')>0) or (a.buff and (buffActive(a.spell) or buffActive(a.trigger))) then
+        s.abilityPending=nil;s.lastAbility=a.name
+        r:log('Monk ability confirmed: '..a.name)
+    elseif t>=p.deadline then
+        s.abilityPending=nil;s.abilityRetry[a.name]=t+3000
+        r:log('Monk ability unconfirmed: '..a.name..'; retry deferred')
+    end
+end
+local function useAbility(r,s,a,options)
+    if not a or s.abilityPending or not yes(a.ready) or now()<(s.abilityRetry[a.name] or 0) then return false end
+    options=options or {}
+    if (a.cast or 0)>0 and yes('Me.Moving') then return false end
+    if a.cost and a.cost>0 and num('Me.CurrentEndurance')<a.cost then return false end
+    if options.slot and discActive() and not (options.defensive and read('Spell['..a.spell..'].StacksWithDiscs')=='TRUE') then return false end
+    if options.buff and (buffActive(a.spell) or buffActive(a.trigger) or (present(a.spell) and read('Spell['..a.spell..'].Stacks')=='FALSE')) then return false end
+    a.buff=options.buff
+    command(r,a.line)
+    local t=now()
+    s.abilityPending={ability=a,deadline=t+math.max(1000,(a.cast or 0)+500)}
+    s.abilityRetry[a.name]=t+500
+    r:log('Monk ability request: '..a.name..' ('..a.kind..')')
+    return true
+end
+-- One nonblocking ability request at a time. No combat actions during
+-- outbound/tag/return, no automated feign, forced movement or AE attacks.
+local function abilityTick(r,s,mode,hostile)
+    if cfg(r,'MonkUseAbilities')~=1 or cfg(r,'UseMelee')~=1 or not s.abilities or
+       s.abilityPending or num('Me.Casting.ID')>0 or yes('Navigation.Active') or
+       not yes('Me.Standing') or yes('Me.Invis') or read('Me.State')=='FEIGN' then return false end
+    local kit=s.abilities
+    local hp,endu=num('Me.PctHPs'),num('Me.PctEndurance')
+    local function d(key,options) return useAbility(r,s,kit.disc[key],options) end
+    local function aa(name,options) return useAbility(r,s,kit.aa[name],options) end
+    local function skill(name) return useAbility(r,s,kit.skill[name]) end
+    local slot={slot=true};local defensive={slot=true,defensive=true};local buff={buff=true}
+    if hp>0 and hp<=60 and skill('Mend') then return true end
+    if kit.aa['Purify Body'] and yes(kit.aa['Purify Body'].ready) then
+        local detrimental=num('Me.CountersDisease')+num('Me.CountersPoison')+num('Me.CountersCurse')+num('Me.CountersCorruption')>0
+        if not detrimental then
+            for _,effect in ipairs({'Dotted','Rooted','Snared','Slowed','Silenced'}) do
+                if num('Me.'..effect..'.ID')>0 then detrimental=true;break end
+            end
+        end
+        if detrimental and aa('Purify Body') then return true end
+    end
+    if mode=='idle' then
+        if endu<math.max(50,cfg(r,'PullMinEndurance')) and
+           (d('combatRecovery',buff) or d('recovery',buff) or d('wind',buff) or d('breaths')) then return true end
+        if not present(read('Me.Aura[1].Name')) and d('aura') then return true end
+        return false
+    end
+    if mode~='combat' then return false end
+    if hp>0 and hp<=30 and d('death',defensive) then return true end
+    if hp>0 and hp<=65 and (d('earth',defensive) or d('shade',defensive) or d('dodge',defensive)) then return true end
+    if endu<=25 and (d('combatRecovery',buff) or d('wind',buff) or d('breaths') or aa("Swift Tails' Chant")) then return true end
+    local e=spawn(s.combatId)
+    local range=num('Target.MaxRangeTo')
+    local dist=tonumber(read(e..'.Distance3D'))
+    if range<=0 or not dist or dist>range or not yes(e..'.LineOfSight') then return false end
+    local targetHP=num(e..'.PctHPs')
+    local burn=cfg(r,'MonkBurnAll')==1 or yes(e..'.Named') or #hostile>1 or
+        (s.combatStarted and now()-s.combatStarted>=15000 and targetHP>40)
+    if aa("Zan Fi's Whistle",buff) or d('drunken',buff) or d('wu',buff) then return true end
+    if burn and hp>65 and (targetHP==0 or targetHP>20) then
+        if d('form') or (endu>=70 and aa("Ton Po's Stance",buff)) or
+           d('heel',slot) or d('speed',slot) or d('iron',slot) or d('palm',slot) or
+           aa('Spire of the Sensei',buff) or aa('Infusion of Thunder',buff) or
+           d('stance') or d('balance') or (endu<85 and aa("Swift Tails' Chant",buff)) then return true end
+        -- Single-target version only, and only with Speed Focus. Do not
+        -- break mez or pull extra nearby mobs with Destructive Force.
+        if kit.disc.speed and read('Me.ActiveDisc.Name')==kit.disc.speed.name and aa('Focused Destructive Force',buff) then return true end
+    end
+    if num('Me.PctAggro')>=80 and aa('Silent Strikes',buff) then return true end
+    if hp>65 and d('storm',slot) then return true end
+    if d('synergy') or (targetHP>25 and (d('curse') or aa('Two-Finger Wasp Touch'))) or
+       d('fists') or d('phantom') or d('fang') or d('precision') or d('shuriken') or
+       (hp>=80 and targetHP>20 and aa('Five Point Palm')) then return true end
+    if num('Me.AltAbility[Intimidation].Rank')>1 and skill('Intimidation') then return true end
+    return skill('Flying Kick') or skill('Round Kick') or skill('Kick') or
+        (endu<25 and skill('Eagle Strike')) or skill('Tiger Claw') or skill('Dragon Punch') or skill('Tail Rake')
+end
+
 -- Basic camp combat uses the same attack and stick primitives as the
--- bard/warrior. No independent discipline or AA rotation is added.
+-- bard/warrior; trained monk abilities are scheduled after engagement.
 local function engageCombat(r,s,hostile,assist)
     if cfg(r,'UseMelee')~=1 or not s.camp or yes('Navigation.Active') then return end
     if not s.combatId and campDistance(s)>cfg(r,'AutoCampRadius') then return end
@@ -380,6 +569,7 @@ local function engageCombat(r,s,hostile,assist)
     end
     if not yes('Me.Standing') then command(r,'/stand');return true end
     local t=now()
+    if s.combatId~=id then s.combatStarted=t end
     s.combatId=id
     if not yes('Me.Combat') then
         if t>=(s.nextAttack or 0) then
@@ -394,8 +584,10 @@ local function engageCombat(r,s,hostile,assist)
         if range>0 then
             command(r,string.format('/stick %.1f moveback loose uw',range>29 and 25 or range))
             s.stickOwned=true;s.nextStick=t+500
+            return true
         end
     end
+    abilityTick(r,s,'combat',hostile)
     return true
 end
 
@@ -415,7 +607,9 @@ function M.classvarsetup(r)
     state(r)
 end
 function M.setupspells(r)
-    suspendMelee(r,state(r))
+    local s=state(r)
+    suspendMelee(r,s)
+    discoverAbilities(r,s)
     if not yes('Plugin[MQ2Nav].IsLoaded') then command(r,'/plugin MQ2Nav load noauto') end
 end
 function M.inichanges(r)
@@ -481,6 +675,7 @@ end
 function M.classmainloop(r)
     local s=state(r);local t=now()
     suspendMelee(r,s)
+    observeAbility(r,s,t)
     if yes('Me.Zoning') or (s.camp and s.camp.zone~=num('Zone.ID')) or yes('Me.Hovering') then
         invalidateCamp(r,s,'Zone or respawn changed; set a new camp')
         return
@@ -541,6 +736,8 @@ function M.classmainloop(r)
            t>=s.waitMobDeadline or (not engaged and t>=s.waitMobGrace) then
             s.phase='idle';s.pullId=nil;s.pullName=nil;s.waitMobId=nil;s.nextPull=t+1500
             status(r,s,'Mob arrival wait complete')
+        elseif campDistance(s)<=cfg(r,'AutoCampRadius') then
+            abilityTick(r,s,'recovery',hostile)
         end
         return
     end
@@ -630,8 +827,14 @@ function M.classmainloop(r)
     end
     if engaged or assist then
         status(r,s,'Fighting extended target')
-        engageCombat(r,s,hostile,assist)
+        if not engageCombat(r,s,hostile,assist) then abilityTick(r,s,'recovery',hostile) end
         return
+    end
+    if not busyMovement and num('Me.Casting.ID')==0 then
+        if not s.abilityPending and (s.abilityLevel~=num('Me.Level') or t>=(s.nextAbilityScan or 0)) then
+            discoverAbilities(r,s)
+        end
+        if s.abilityPending or abilityTick(r,s,'idle',hostile) then return end
     end
     if cfg(r,'AutoPull')~=1 then status(r,s,'Camp active; auto pull off');return end
     if not yes('Navigation.MeshLoaded') then status(r,s,'Waiting for MQ2Nav zone mesh');return end

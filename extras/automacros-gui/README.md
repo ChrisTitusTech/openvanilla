@@ -16,8 +16,8 @@ they are loaded and unlock once the runtime can process changes.
   radius, assist HP, follow, fellowship, instant release, verbose
   notifications and backoff.
 - Bard: slow, mez and bring your own spells.
-- Monk: auto pull, pull radius, vertical radius, NPC name filter and
-  readiness thresholds. See the monk section below.
+- Monk: auto pull, pull radius, vertical radius, NPC name filter,
+  readiness thresholds, combat abilities and burn policy. See the monk section below.
 - Cleric: resurrection, Promised heals, Divine buff, druid buffs, heal
   and mana thresholds, mount item, Quiet Miracle recipient and tank
   selection. The cure suppression setting applies only to this session.
@@ -133,14 +133,34 @@ NPCs. It prioritizes an eligible group assist target, otherwise the
 lowest-health eligible NPC, confirms the target, and controls basic attack
 and stick directly. Other mobs already in camp can be fought immediately,
 even while the pulled mob is still on its way. After a target dies, AutoLua
-releases its attack and stick before engaging the next NPC. No combat
-discipline or AA rotation is implemented. The next pull waits for
+releases its attack and stick before engaging the next NPC.
+
+With **Monk combat and recovery abilities** enabled (default), AutoLua
+enumerates learned combat abilities at startup and chooses the highest
+learned line and rank. It refreshes its ability list during downtime
+after a level change or every five minutes. It uses trained melee
+skills (Flying Kick, Tiger Claw and applicable alternatives), the
+Synergy, Fists, Phantom, Fang, Curse and Shuriken discipline lines,
+combat buff AAs and disciplines, Mend, Purify Body when needed,
+endurance recovery and the monk aura. Defensive discs are prioritized
+when health is low. Major damage discs and burn AAs are used against
+named mobs, multiple hostiles, or fights lasting at least 15 seconds.
+Enable **Burn on every fight** to use them on ordinary encounters too.
+Long-duration active discs are not overwritten. Offensive abilities require a
+valid target and range; readiness, health and endurance reserves are checked. Requests are
+confirmed from cooldown or cast state and failed requests back off.
+The log records the resolved ability list, unclassified learned
+disciplines, requests and activation results; the GUI displays the last
+confirmed ability. No automated feign, forced target movement, area
+damage, veteran AA or equipment clicky rotation is enabled.
+
+The next pull waits for
 combat to finish and for
 monk/group health (default 80%), endurance (50%) and healer mana (50%).
 If the group starts fighting or falls below readiness during approach,
 the monk returns to camp. Failed/unreachable targets are skipped for
 30 seconds. This is single-pull automation; it does not implement
-automatic feign-death splitting or a full monk burn rotation.
+automatic feign-death splitting or coordinated raid burn rotations.
 
 Commands:
 
@@ -161,7 +181,7 @@ For an already-installed GUI/Selo overlay, apply only
 offline suite exercises the pull cycle, 3D camp coordinates, group
 readiness, native spawn enumeration, path ranking, AA activation and
 retry, rescan, early navigation arrival, feign pause/resume, plugin suspension/restoration, multi-target
-camp combat, mob-arrival wait, GUI persistence, timeout, cancellation,
+camp combat, learned-rank selection, ability recovery, burn coordination, mob-arrival wait, GUI persistence, timeout, cancellation,
 and zone invalidation. Existing character INI settings are preserved
 when upgrading; the new path limit and timeout are initialized on first
 run. Live pathing and ability activation still need verification in the

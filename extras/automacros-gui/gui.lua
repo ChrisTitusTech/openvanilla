@@ -17,6 +17,8 @@ local classes = {
     war = {},
     mnk = {
         {'AutoPull', 'Auto pull', 'toggle'},
+        {'MonkUseAbilities', 'Monk combat and recovery abilities', 'toggle'},
+        {'MonkBurnAll', 'Burn on every fight', 'toggle'},
         {'PullRadius', 'Pull radius (units)', 'number', 50, 10000},
         {'PullZRadius', 'Vertical pull radius (units)', 'number', 10, 350},
         {'PullMaxPath', 'Maximum navigation path (units)', 'number', 50, 10000},
@@ -224,6 +226,9 @@ function G:draw(imgui)
                 for _,field in ipairs(classes[self.class]) do self:drawField(imgui,field) end
                 if self.class=='mnk' then
                     imgui.TextWrapped(self.r.monk and self.r.monk.status or 'Set camp here first.')
+                    if self.r.monk and self.r.monk.lastAbility then
+                        imgui.TextWrapped('Last confirmed ability: '..self.r.monk.lastAbility)
+                    end
                     imgui.TextWrapped('Set camp here, then enable Auto pull. MQ2Nav needs a loaded zone mesh. MQ2Melee stays disabled while AutoLua is running.')
                 else
                     imgui.TextWrapped('Bring your own spells applies to spell setup on restart.')

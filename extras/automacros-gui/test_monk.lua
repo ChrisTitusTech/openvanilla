@@ -101,7 +101,14 @@ return function(setup,mock,eq)
         Button=function() return false end,
         Checkbox=function(label,v) labels[label]=true;return v,false end,
     })
-    assert(labels['Auto pull'] and labels['Return to camp'] and labels['Auto melee'],'monk config controls rendered')
+    assert(labels['Auto pull'] and labels['Return to camp'] and labels['Auto melee']
+        and labels['Monk combat and recovery abilities'] and labels['Burn on every fight'],'monk config controls rendered')
+    r.gui:queue('MonkUseAbilities',false);r:pump()
+    eq(mock.ini['General/MonkUseAbilities'],'0','ability toggle saved')
+    r.gui:queue('MonkUseAbilities',true);r:pump()
+    r.gui:queue('MonkBurnAll',true);r:pump()
+    eq(mock.ini['General/MonkBurnAll'],'1','burn toggle saved')
+    r.gui:queue('MonkBurnAll',false);r:pump()
 
     -- Nearest merchant and wrong name are rejected; next reachable mob is chosen.
     local candidates={100,101,102,104,103,105,106,107}
@@ -343,6 +350,169 @@ return function(setup,mock,eq)
     assert(not ok and tostring(err):find('Mock exit',1,true),'second stop reached mq.exit')
     assert(not commandsSince(before,'/melee on'),'stop never enables initially disabled plugin')
     eq(mock.values['Melee.Enable'],'FALSE','previous disabled state preserved')
+
+    -- Learned rank discovery and combat/recovery rotation. These examples
+    -- include the exact ranks observed in Dantea's client combat log.
+    mock.values={}
+    move(100,200,5)
+    value('Zone.ID',102);value('Me.State','STAND');value('Me.Invis','FALSE')
+    value('Me.Standing','TRUE');value('Me.Combat','FALSE');value('Me.CombatState','ACTIVE')
+    value('Me.CurrentEndurance',10000);value('Me.PctEndurance',35);value('Me.PctHPs',45)
+    value('Melee.Enable','FALSE');value('Navigation.MeshLoaded','TRUE');value('Navigation.Active','FALSE')
+    value('Me.XTargetSlots',13);value('Group.Members',0)
+    local function disc(index,name,cost)
+        value('Me.CombatAbility['..index..'].Name',name)
+        value('Me.CombatAbilityReady['..name..']','FALSE')
+        value('Spell['..name..'].EnduranceCost',cost or 50)
+    end
+    local aura="Master's Aura"
+    local synergy="Doomwalker's Synergy Rk. III"
+    local fists='Torrent of Fists Rk. III'
+    local phantom='Phantom Pummeling Rk. III'
+    local shuriken='Vigorous Shuriken Rk. III'
+    local drunken='Drunken Monkey Style Rk. II'
+    local heel='Heel of Zagali Rk. II'
+    local speed='Speed Focus Discipline'
+    local refuse='Refuse Death Rk. II'
+    local earth='Earthforce Discipline Rk. II'
+    disc(1,aura);disc(2,'Breather');disc(3,"Doomwalker's Synergy Rk. II");disc(4,synergy)
+    disc(5,"Shadewalker's Synergy Rk. III");disc(6,fists);disc(7,phantom);disc(8,shuriken)
+    disc(9,drunken);disc(10,heel);disc(11,speed);disc(12,refuse);disc(13,earth)
+    disc(14,'Curse of the Thirteen Fingers Rk. III');disc(15,"Dragon's Balance Rk. III")
+    disc(16,'Echo of Deceit Rk. III')
+    for _,name in ipairs({'Mend','Flying Kick','Tiger Claw','Intimidation'}) do
+        value('Me.Skill['..name..']',350);value('Me.AbilityReady['..name..']','FALSE')
+    end
+    local function readyDisc(name,v) value('Me.CombatAbilityReady['..name..']',v and 'TRUE' or 'FALSE') end
+    local function readySkill(name,v) value('Me.AbilityReady['..name..']',v and 'TRUE' or 'FALSE') end
+    local function readyAA(name,v) value('Me.AltAbilityReady['..name..']',v and 'TRUE' or 'FALSE') end
+    value("Me.AltAbility[Zan Fi's Whistle].ID",777)
+    value("Me.AltAbility[Zan Fi's Whistle].Spell.Name","Zan Fi's Whistle II")
+    value('Me.AltAbility[Infusion of Thunder].ID',778)
+    value('Me.AltAbility[Purify Body].ID',779)
+    value('Me.AltAbility[Five Point Palm].ID',780)
+    value("Me.AltAbility[Ton Po's Stance].ID",781)
+    local monk=setup('mnk')
+    eq(monk.monk.abilities.disc.synergy.name,synergy,'highest learned rank and highest family selected')
+    eq(monk.monk.abilities.disc.phantom.name,phantom,'recognized live DPS discipline')
+    eq(monk.monk.abilities.disc.aura.name,aura,'recognized aura')
+    eq(monk.monk.abilities.aa["Zan Fi's Whistle"].line,'/alt act 777','resolve actual owned AA ID')
+    assert(not monk.monk.abilities.disc.mez,'do not schedule mez or pulling discs as DPS')
+    monk:dispatch('camphere')
+    readySkill('Mend',true);readyDisc('Breather',true);readyDisc(aura,true)
+    before=#mock.commands;tick(monk)
+    assert(commandsSince(before,'/doability Mend'),'heal low health during downtime')
+    before=#mock.commands;tick(monk,200)
+    eq(#mock.commands,before,'wait for confirmation instead of spamming skills')
+    readySkill('Mend',false);value('Me.PctHPs',100)
+    before=#mock.commands;tick(monk)
+    assert(commandsSince(before,'/doability "Breather"'),'recover endurance before the pull gate')
+    readyDisc('Breather',false);value('Me.PctEndurance',100)
+    before=#mock.commands;tick(monk)
+    assert(commandsSince(before,string.format('/doability %q',aura)),'maintain missing aura')
+    readyDisc(aura,false);value('Me.Aura[1].Name',aura)
+    tick(monk)
+    readyDisc(aura,true)
+    before=#mock.commands;tick(monk)
+    eq(#mock.commands,before,'do not recast existing aura')
+
+    mob(500,'a training NPC',110,200,5,true)
+    value('Me.XTarget[5].ID',500);value('Me.XTarget',1)
+    value('Target.ID',500);value('Target.MaxRangeTo',20)
+    value('Me.CombatState','COMBAT');value('Stick.Active','FALSE')
+    tick(monk);tick(monk)
+    readyAA("Zan Fi's Whistle",true);readyDisc(drunken,true);readyDisc(synergy,true)
+    readyDisc("Doomwalker's Synergy Rk. II",true);readyDisc(fists,true)
+    readyDisc(phantom,true);readyDisc(shuriken,true)
+    readySkill('Flying Kick',true);readySkill('Tiger Claw',true)
+    before=#mock.commands;tick(monk)
+    assert(commandsSince(before,'/alt act 777'),'activate learned combat buff AA')
+    readyAA("Zan Fi's Whistle",false)
+    before=#mock.commands;tick(monk)
+    assert(commandsSince(before,string.format('/doability %q',drunken)),'maintain learned combat buff discipline')
+    readyDisc(drunken,false)
+    for _,name in ipairs({synergy,fists,phantom,shuriken}) do
+        before=#mock.commands;tick(monk)
+        assert(commandsSince(before,string.format('/doability %q',name)),'use DPS discipline '..name)
+        readyDisc(name,false)
+    end
+    before=#mock.commands;tick(monk)
+    assert(commandsSince(before,'/doability Flying Kick'),'use flying kick')
+    assert(not commandsSince(before,string.format('/doability %q',"Doomwalker's Synergy Rk. II")),'do not downgrade on cooldown')
+    readySkill('Flying Kick',false)
+    before=#mock.commands;tick(monk)
+    assert(commandsSince(before,'/doability Tiger Claw'),'use independent hand strike')
+    readySkill('Tiger Claw',false);tick(monk)
+
+    readyDisc(heel,true);readyDisc(speed,true)
+    monk:set({},'MonkBurnAll',1);value('Me.ActiveDisc.Name','Manual Discipline')
+    before=#mock.commands;tick(monk)
+    assert(not commandsSince(before,string.format('/doability %q',heel)),'never overwrite an active disc')
+    value('Me.ActiveDisc.Name','NULL')
+    before=#mock.commands;tick(monk)
+    assert(commandsSince(before,string.format('/doability %q',heel)),'activate burn disc on configured fights')
+    readyDisc(heel,false);value('Me.ActiveDisc.Name',heel)
+    before=#mock.commands;tick(monk)
+    assert(not commandsSince(before,string.format('/doability %q',speed)),'do not overlap long burns')
+    value('Me.ActiveDisc.Name','NULL');readyDisc(speed,false)
+    value('Me.PctHPs',20);readySkill('Mend',true);readyDisc(refuse,true)
+    before=#mock.commands;tick(monk,600)
+    assert(commandsSince(before,'/doability Mend'),'emergency mend precedes DPS')
+    readySkill('Mend',false)
+    before=#mock.commands;tick(monk)
+    assert(commandsSince(before,string.format('/doability %q',refuse)),'emergency defensive discipline')
+    readyDisc(refuse,false);value('Me.PctHPs',55);readyDisc(earth,true)
+    before=#mock.commands;tick(monk)
+    assert(commandsSince(before,string.format('/doability %q',earth)),'proactive mitigation at low health')
+    readyDisc(earth,false);value('Me.PctHPs',100);tick(monk)
+    readyAA('Purify Body',true);value('Me.CountersPoison',5)
+    before=#mock.commands;tick(monk)
+    assert(commandsSince(before,'/alt act 779'),'cure actual detrimental counters')
+    readyAA('Purify Body',false);value('Me.CountersPoison',0);tick(monk)
+
+    -- The client database identifies these as HP- and endurance-consuming
+    -- modifiers. Only use them with adequate reserves.
+    readyAA('Five Point Palm',true);readyAA("Ton Po's Stance",true)
+    value('Me.PctHPs',65);value('Me.PctEndurance',40)
+    before=#mock.commands;tick(monk)
+    assert(not commandsSince(before,'/alt act 780'),'do not spend health at low HP')
+    assert(not commandsSince(before,'/alt act 781'),'do not drain low endurance')
+    value('Me.PctHPs',100);value('Me.PctEndurance',100)
+    before=#mock.commands;tick(monk)
+    assert(commandsSince(before,'/alt act 781'),'use offensive stance with ample endurance')
+    readyAA("Ton Po's Stance",false)
+    before=#mock.commands;tick(monk)
+    assert(commandsSince(before,'/alt act 780'),'use health-consuming strike at healthy HP')
+    readyAA('Five Point Palm',false);tick(monk)
+
+    -- Match range and pending-action gates, including a failed activation.
+    readySkill('Flying Kick',true);value('Spawn[id 500].Distance3D',70)
+    before=#mock.commands;tick(monk)
+    assert(not commandsSince(before,'/doability Flying Kick'),'do not use melee skill out of range')
+    value('Spawn[id 500].Distance3D',10);tick(monk)
+    before=#mock.commands;tick(monk,1100)
+    assert(not commandsSince(before,'/doability Flying Kick'),'failed activation gets a retry cooldown')
+    eq(monk.monk.abilityPending,nil,'unconfirmed request clears')
+    monk:set({},'MonkUseAbilities',0)
+    before=#mock.commands;tick(monk,4000)
+    assert(not commandsSince(before,'/doability Flying Kick'),'ability toggle disables rotation')
+    monk:set({},'MonkUseAbilities',1)
+    monk:dispatch('campoff')
+    before=#mock.commands;tick(monk)
+    assert(not commandsSince(before,'/doability Flying Kick'),'no combat abilities outside camp control')
+    -- A ready combat strike must never fire during approach navigation.
+    value('Me.XTarget[5].ID',0);value('Me.XTarget',0);value('Me.CombatState','ACTIVE')
+    value('Me.AltAbilityReady[Distant Strike]','TRUE');value('Me.AltAbility[Distant Strike].ID',376)
+    value('Me.AltAbility[Distant Strike].Spell.MyRange',300)
+    mob(501,'a pull target',200,200,5,false);value('Navigation.PathLength[id 501]',100)
+    value('Navigation.PathExists[id 501]','TRUE');scannable={501}
+    monk:dispatch('camphere');monk:dispatch('pullon')
+    tick(monk,2000);eq(monk.monk.phase,'outbound','begin pull with combat skills ready')
+    before=#mock.commands;tick(monk)
+    assert(commandsSince(before,'/nav id 501 distance=292 lineofsight=on'),'navigate without combat ability')
+    assert(not commandsSince(before,'/doability Flying Kick'),'no melee abilities during pull')
+    monk:call('onstop')
+    print('PASS monk learned ranks, recovery, buffs, DPS, burns, emergency abilities, cooldown confirmation and range gates')
 
     print('PASS monk GUI settings, camp gate, navigation, target eligibility, ranged pull, aggro return, basic combat, session-wide MQ2Melee suspension, fallback, early navigation arrival, zoning and cancellation')
     mock.values={}
