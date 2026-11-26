@@ -52,6 +52,7 @@ local function trap(id)
     return tostring(read(spawn(id)..'.CleanName') or ''):lower():find('%f[%a]trap%f[%A]')~=nil
 end
 local function feigning() return yes('Me.Feigning') or read('Me.State')=='FEIGN' end
+local function stunned() return yes('Me.Stunned') or read('Me.State')=='STUN' end
 local function followName(r)
     local name=cfg(r,'FollowToonName') or ''
     if name=='' or name:lower()=='null' or name:lower()=='nullnullnullnullnull' then return nil end
@@ -361,6 +362,7 @@ local function requestTag(r,s,method,t)
     if num('Target.ID')~=s.pullId then
         command(r,'/squelch /target id '..s.pullId);status(r,s,'Targeting '..s.pullName);return
     end
+    if stunned() then status(r,s,'Stunned; waiting before tagging');return end
     if not yes('Me.Standing') then command(r,'/stand');status(r,s,'Standing to pull');return end
     if yes('Navigation.Active') or yes('Me.Moving') then status(r,s,'Waiting for movement to stop before tagging');return end
     if s.abilityPending or num('Me.Casting.ID')>0 then status(r,s,'Waiting for current ability before tagging');return end
@@ -656,7 +658,7 @@ end
 local function abilityTick(r,s,mode,hostile)
     if cfg(r,'MonkUseAbilities')~=1 or cfg(r,'UseMelee')~=1 or not s.abilities or
        s.abilityPending or num('Me.Casting.ID')>0 or yes('Navigation.Active') or
-       not yes('Me.Standing') or yes('Me.Invis') or feigning() then return false end
+       not yes('Me.Standing') or yes('Me.Invis') or feigning() or stunned() then return false end
     if selfProtection(r,s,mode) then return true end
     local kit=s.abilities
     local hp,endu=num('Me.PctHPs'),num('Me.PctEndurance')
@@ -765,6 +767,7 @@ local function engageCombat(r,s,hostile,assist)
         r:logAction('monk-target:'..id,'Monk combat target request id='..id)
         return true
     end
+    if stunned() then return true end
     if not yes('Me.Standing') then command(r,'/stand');return true end
     local t=now()
     s.combatId=id
