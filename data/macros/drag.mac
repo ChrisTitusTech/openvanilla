@@ -18,10 +18,15 @@ Sub Main
 
     | Snapshot IDs before dragging changes their nearest-spawn order.
     /declare dragIds[${corpseCount}] int outer 0
+    /declare dragPulled[${corpseCount}] int outer 0
+    /declare dragFailures[${corpseCount}] int outer 0
     /for corpseIndex 1 to ${corpseCount}
-        /if (${NearestSpawn[${corpseIndex},pccorpse radius 100].ID}) /varset dragIds[${corpseIndex}] ${NearestSpawn[${corpseIndex},pccorpse radius 100].ID}
+        /if (${NearestSpawn[${corpseIndex},pccorpse radius 100].ID}) {
+            /varset dragIds[${corpseIndex}] ${NearestSpawn[${corpseIndex},pccorpse radius 100].ID}
+            /echo Drag: Found ${Spawn[id ${dragIds[${corpseIndex}]}].CleanName} (ID ${dragIds[${corpseIndex}]}, distance ${Spawn[id ${dragIds[${corpseIndex}]}].Distance}).
+        }
     /next corpseIndex
-    /echo Drag: Tracking ${corpseCount} player corpses. Move to pull them within 25 units; /endmacro to stop.
+    /echo Drag: Tracking ${corpseCount} player corpses. Wait for the initial pulls, then move; /endmacro to stop.
 
     :mainloop
     /varset remaining 0
@@ -41,45 +46,64 @@ Sub Main
 
 Sub DragOne(int slot)
     /declare corpseId int local ${dragIds[${slot}]}
-    /declare attempt int local 0
+    /declare startDist float local 0
 
-    /if (!${Spawn[id ${corpseId} pccorpse].ID} || ${Spawn[id ${corpseId}].Distance}>100) {
+    /if (!${Spawn[id ${corpseId} pccorpse].ID}) {
         /varset dragIds[${slot}] 0
         /return
     }
-    /if (${Spawn[id ${corpseId}].Distance}<=25) /return
+    /if (!${Spawn[id ${corpseId} pccorpse radius 100].ID}) {
+        /echo Drag: Corpse ID ${corpseId} is out of range; skipping.
+        /varset dragIds[${slot}] 0
+        /return
+    }
+    /varset startDist ${Spawn[id ${corpseId}].Distance}
+    | Pull each corpse on the initial pass unless it is already at your feet.
+    | Once gathered, retain the original 25-unit following distance.
+    /if (${startDist}<=10) {
+        /varset dragPulled[${slot}] 1
+        /varset dragFailures[${slot}] 0
+        /return
+    }
+    /if (${dragPulled[${slot}]} && ${startDist}<=25) /return
 
-    /for attempt 1 to 3
-        | Process late consent messages before starting the next request.
+    | One attempt per corpse per pass. A local /target immediately changes
+    | Target.ID, so a conditional delay alone cannot settle the server target.
+    /doevents Denied
+    /varset denied 0
+    /target id ${corpseId}
+    /delay 10
+    /if (${Target.ID}==${corpseId} && ${Spawn[id ${corpseId} pccorpse radius 100].ID}) {
+        /echo Drag: Pulling ${Spawn[id ${corpseId}].CleanName} (ID ${corpseId}, distance ${startDist}).
+        /varset requestId ${corpseId}
+        /corpse
+        | Allow the server to move the corpse or deliver a consent error.
+        /delay 20
         /doevents Denied
-        /varset denied 0
-        /if (!${Spawn[id ${corpseId} pccorpse radius 100].ID}) {
+        /varset requestId 0
+        /if (!${Spawn[id ${corpseId}].ID}) {
             /varset dragIds[${slot}] 0
             /return
         }
-        /target id ${corpseId}
-        /delay 5 ${Target.ID}==${corpseId}
-        /if (${Target.ID}==${corpseId} && ${Spawn[id ${corpseId} pccorpse radius 100].ID}) {
-            /varset requestId ${corpseId}
-            /corpse
-            /delay 1s !${Spawn[id ${corpseId}].ID} || ${Spawn[id ${corpseId}].Distance}<=25
-            /doevents Denied
-            /varset requestId 0
-            /if (!${Spawn[id ${corpseId}].ID}) {
-                /varset dragIds[${slot}] 0
-                /return
-            }
-            /if (${Spawn[id ${corpseId}].Distance}<=25) /return
-            /if (${denied}) {
-                /echo Drag: No consent for ${Spawn[id ${corpseId}].CleanName} (ID ${corpseId}); skipping.
-                /varset dragIds[${slot}] 0
-                /return
-            }
+        /if (${Spawn[id ${corpseId}].Distance}<=10 || (${startDist}>25 && ${Spawn[id ${corpseId}].Distance}<=25)) {
+            /varset dragPulled[${slot}] 1
+            /varset dragFailures[${slot}] 0
+            /echo Drag: Pulled corpse ID ${corpseId} (distance ${Spawn[id ${corpseId}].Distance}).
+            /return
         }
-        /delay 5
-    /next attempt
-    /echo Drag: Could not pull corpse ID ${corpseId} after 3 attempts; skipping.
-    /varset dragIds[${slot}] 0
+        /if (${denied}) {
+            /echo Drag: No consent for ${Spawn[id ${corpseId}].CleanName} (ID ${corpseId}); skipping.
+            /varset dragIds[${slot}] 0
+            /return
+        }
+    }
+    /varcalc dragFailures[${slot}] ${dragFailures[${slot}]}+1
+    /if (${dragFailures[${slot}]}>=5) {
+        /echo Drag: Could not pull corpse ID ${corpseId} after 5 passes; skipping.
+        /varset dragIds[${slot}] 0
+    } else {
+        /echo Drag: Corpse ID ${corpseId} not moved on pass ${dragFailures[${slot}]}; retrying next pass.
+    }
 /return
 
 Sub Event_Denied
