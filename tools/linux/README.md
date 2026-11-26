@@ -207,7 +207,11 @@ TAGS="3 7 8 9" CHARS="erollisi:Main erollisi:Alt1 erollisi:Alt2 -" tools/linux/m
 
 By default each client runs inside its own nested
 [gamescope](https://github.com/ValveSoftware/gamescope) at a fixed
-`GS_RES` (default `1920x1080`). When the window manager resizes or
+`GS_RES`. The default `auto` uses the primary monitor minus any panel docked
+to its edges (2560x1440 with a 30px bar gives 2560x1410). The launcher also
+writes that size to `eqclient.ini` (`WindowedWidth`/`WindowedHeight`, zero
+window offsets, windowed mode), so EverQuest exactly fills gamescope's nested
+screen. The first run saves a backup as `eqclient.ini.mq-launch.bak`. When the window manager resizes or
 unfocuses the window, gamescope scales the output and EverQuest never sees
 a resolution change or focus loss. `GS_ARGS` defaults to
 `--force-grab-cursor` so mouse input and mouselook stay inside the client;
