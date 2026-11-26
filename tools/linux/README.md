@@ -205,6 +205,21 @@ up in `config/login.db`. Add characters there from the MacroQuest tray menu
 TAGS="3 7 8 9" CHARS="erollisi:Main erollisi:Alt1 erollisi:Alt2 -" tools/linux/mq-launch.sh
 ```
 
+By default each client runs inside its own nested
+[gamescope](https://github.com/ValveSoftware/gamescope) at a fixed
+`GS_RES` (default `1920x1080`). When the window manager resizes or
+unfocuses the window, gamescope scales the output and EverQuest never sees
+a resolution change or focus loss. Pass extra flags with `GS_ARGS` (for
+example `--force-grab-cursor` for mouselook), or set `GAMESCOPE=0` to run
+plain Proton. If gamescope exits at once, check that `gamescope -- glxgears`
+works. On NVIDIA, `vkCreateDevice failed (VkResult: -3)` together with
+`NV_ERR_RESET_REQUIRED` in `journalctl -k` means the GPU faulted and needs
+a reboot.
+
+```sh
+GS_RES=2560x1440 GS_ARGS="--force-grab-cursor" tools/linux/mq-launch.sh
+```
+
 Wine tray icons use the X11 XEmbed protocol. Panels that only host
 StatusNotifierItem icons (Quickshell, Waybar) need a bridge, or the
 MacroQuest icon ends up in an off-screen Wine tray window. A lightweight

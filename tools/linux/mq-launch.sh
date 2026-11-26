@@ -10,6 +10,10 @@
 #   MQ_DIR          directory holding MacroQuest.exe (default: build/linux-x64/bin/release)
 #   LAUNCH_DELAY    seconds between a client's window appearing and the next launch (default: 2)
 #   WINDOW_TIMEOUT  seconds to wait for each client window (default: 180)
+#   GAMESCOPE       1 = run each client in its own nested gamescope (fixed resolution,
+#                   client always sees itself focused); 0 = plain Proton (default: 1)
+#   GS_RES          gamescope game and window resolution, WxH (default: 1920x1080)
+#   GS_ARGS         extra gamescope arguments, e.g. "--force-grab-cursor"
 set -euo pipefail
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -21,6 +25,9 @@ eq_dir="${EQ_DIR:-$steam/steamapps/common/Everquest F2P}"
 mq_dir="${MQ_DIR:-$repo/build/linux-x64/bin/release}"
 launch_delay="${LAUNCH_DELAY:-2}"
 window_timeout="${WINDOW_TIMEOUT:-180}"
+use_gamescope="${GAMESCOPE:-1}"
+gs_res="${GS_RES:-1920x1080}"
+read -r -a gs_args <<<"${GS_ARGS:-}"
 
 export STEAM_COMPAT_DATA_PATH="${STEAM_COMPAT_DATA_PATH:-$steam/steamapps/compatdata/205710}"
 export STEAM_COMPAT_CLIENT_INSTALL_PATH="${STEAM_COMPAT_CLIENT_INSTALL_PATH:-$steam}"
@@ -42,9 +49,19 @@ done
 if (( ${#chars[@]} > 0 && ${#chars[@]} != ${#tags[@]} )); then
     die "CHARS has ${#chars[@]} entries but TAGS has ${#tags[@]}"
 fi
+if [[ "$use_gamescope" == 1 ]]; then
+    command -v gamescope >/dev/null || die "missing gamescope (set GAMESCOPE=0 to run without it)"
+    [[ "$gs_res" =~ ^([0-9]+)x([0-9]+)$ ]] || die "invalid GS_RES '$gs_res' (expected WxH)"
+    gs_w="${BASH_REMATCH[1]}" gs_h="${BASH_REMATCH[2]}"
+fi
 for char in "${chars[@]}"; do
     [[ "$char" == - || "$char" =~ ^[^:]+:[^:]+$ ]] || die "invalid CHARS entry '$char' (expected server:character or -)"
 done
+
+# Top-level window owned by a PID (gamescope's nested output window).
+pid_window() {
+    wmctrl -lp | awk -v pid="$1" '$3 == pid { print $1; exit }'
+}
 
 # Managed EverQuest windows. Proton sets WM_CLASS to steam_app_<id> for every
 # process in the prefix (MacroQuest too), so also match the "EverQuest" title.
@@ -90,13 +107,26 @@ for tag in "${tags[@]}"; do
     char="${chars[client - 1]:--}"
     [[ "$char" == - ]] || args+=("/login:$char")
     printf 'client %d: launching eqgame.exe %s (tag %d)\n' "$client" "${args[*]}" "$tag"
-    (cd "$eq_dir" && exec "$proton" run "$eq_dir/eqgame.exe" "${args[@]}") >/dev/null 2>&1 &
+    if [[ "$use_gamescope" == 1 ]]; then
+        # Fixed inner (-w/-h) and outer (-W/-H) size; dwm may resize the outer window,
+        # gamescope scales, and EQ never sees a mode change or focus loss.
+        (cd "$eq_dir" && exec gamescope -w "$gs_w" -h "$gs_h" -W "$gs_w" -H "$gs_h" "${gs_args[@]}" \
+            -- "$proton" run "$eq_dir/eqgame.exe" "${args[@]}") >/dev/null 2>&1 &
+    else
+        (cd "$eq_dir" && exec "$proton" run "$eq_dir/eqgame.exe" "${args[@]}") >/dev/null 2>&1 &
+    fi
+    launcher_pid=$!
 
     win=""
     deadline=$((SECONDS + window_timeout))
     while [[ -z "$win" ]]; do
         (( SECONDS < deadline )) || die "client $client: no window after ${window_timeout}s"
         sleep 1
+        if [[ "$use_gamescope" == 1 ]]; then
+            kill -0 "$launcher_pid" 2>/dev/null || die "client $client: gamescope exited (check: gamescope -- glxgears)"
+            win="$(pid_window "$launcher_pid")"
+            continue
+        fi
         while read -r candidate; do
             if [[ -n "$candidate" && -z "${seen[$candidate]:-}" ]]; then
                 win="$candidate"
