@@ -19,6 +19,7 @@ local settings = {
 local function read(expr) return mq.parse('${'..expr..'}') end
 local function num(expr) return tonumber(read(expr)) or 0 end
 local function yes(expr) return read(expr)=='TRUE' end
+local function sitting() return yes('Me.Sitting') or read('Me.State')=='SIT' end
 local function cfg(r,key) return r:get({},key) end
 local function clamp(v,low,high) return math.max(low,math.min(high,v)) end
 local function command(r,line) r:command({},line) end
@@ -142,7 +143,7 @@ local function startNav(r,s,dest,range)
         return false
     end
     if not pathExists(dest) then return false end
-    if yes('Me.Sitting') then command(r,'/stand') end
+    if sitting() then command(r,'/stand') end
     command(r,'/nav '..dest..' distance='..range..(dest:sub(1,3)=='id ' and ' lineofsight=on' or ''))
     s.navOwned=true;s.navStarted=now()
     return true
@@ -977,13 +978,13 @@ function M.classmainloop(r)
     maintainCombat(r,s,hostile,assist)
     local engaged=#hostile>0 or read('Me.CombatState')=='COMBAT' or yes('Me.Combat')
     -- Stand on incoming aggro before any attempt to fight or feign.
-    if (engaged or assist) and s.restOwned and yes('Me.Sitting') then
+    if (engaged or assist) and s.restOwned and sitting() then
         if t>=(s.nextRestCommand or 0) then
             command(r,'/stand');s.nextRestCommand=t+500
         end
         return
     end
-    if s.restOwned and not yes('Me.Sitting') and yes('Me.Standing') and t>=(s.nextRestCommand or 0) then s.restOwned=nil end
+    if s.restOwned and not sitting() and yes('Me.Standing') and t>=(s.nextRestCommand or 0) then s.restOwned=nil end
     if not s.camp then
         -- Out-of-combat recovery is useful after a death or before camp is
         -- established, too. Do not require an active pull or camp to sit.
@@ -1226,7 +1227,7 @@ function M.classmainloop(r)
                 command(r,'/sit');s.restOwned=true;s.nextRestCommand=t+500
             end
             return
-        elseif cfg(r,'AutoPull')==1 and yes('Me.Sitting') then
+        elseif cfg(r,'AutoPull')==1 and sitting() then
             if t>=(s.nextRestCommand or 0) then
                 command(r,'/stand');s.nextRestCommand=t+500
                 status(r,s,'Recovered; standing to pull')
