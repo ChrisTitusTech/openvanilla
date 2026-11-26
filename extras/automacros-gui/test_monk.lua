@@ -192,7 +192,9 @@ return function(setup,mock,eq)
     value('Me.AltAbilityReady[Distant Strike]','FALSE')
     tick(r,100)
     eq(r.monk.action.confirmed,true,'cooldown flip confirms activation')
+    value('Me.CombatState','COMBAT')
     before=#mock.commands;tick(r,1000)
+    eq(r.monk.phase,'awaitAggro','combat state alone is not proof of mob hate')
     eq(r.monk.phase,'awaitAggro','confirmed AA gets an aggro grace period')
     eq(#mock.commands,before,'no premature fallback toward mob')
 
@@ -266,6 +268,15 @@ return function(setup,mock,eq)
     move(100,200,5)
     before=#mock.commands;tick(r)
     eq(#mock.commands,before,'no fighting without a hostile')
+
+    -- A mob that leashes or loses hate before camp should not be selected
+    -- on every subsequent scan.
+    mob(110,'a goblin lost in transit',190,200,5,true)
+    r.monk.phase='waitingMob';r.monk.waitMobId=110
+    r.monk.waitMobGrace=mock.time+1000;r.monk.waitMobDeadline=mock.time+10000
+    tick(r,1500)
+    eq(r.monk.phase,'idle','release lost incoming mob')
+    assert(r.monk.rejected[110]>mock.time,'temporarily skip lost incoming mob')
 
     -- Throw Stone fallback and cancel during outbound navigation.
     value('Me.AltAbilityReady[Distant Strike]','FALSE')

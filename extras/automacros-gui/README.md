@@ -147,8 +147,11 @@ the target is temporarily skipped.
 The monk uses **Distant Strike** when ready, falling back to **Throw Stone**.
 It resolves the actual AA ID, confirms its target and ability activation
 using casting/cooldown state, and retries or moves closer until aggro is
-confirmed (default timeout 15 seconds). Confirmed activation gets a
-three-second aggro grace period before a fallback approach. AutoLua
+confirmed by an extended target or direct hate/target-of-target
+evidence (default timeout 15 seconds). Confirmed activation gets a
+three-second aggro grace period before a fallback approach. If a mob
+leashes or loses hate before reaching camp, it is skipped for 15 seconds
+instead of immediately repeating the same pull. AutoLua
 disables MQ2Melee throughout the entire monk session, including in camp,
 during combat, when pulling is off, and when zoning. On a graceful
 AutoLua stop, it restores the plugin's original enabled state without

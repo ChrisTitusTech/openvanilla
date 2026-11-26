@@ -1007,10 +1007,17 @@ function M.classmainloop(r)
     end
     if s.phase=='waitingMob' then
         local id=s.waitMobId
-        if engageCombat(r,s,hostile,assist) or not npc(id) or distance(position(spawn(id)),s.camp)<=cfg(r,'AutoCampRadius') or
-           t>=s.waitMobDeadline or (not engaged and t>=s.waitMobGrace) then
+        local remote=npc(id) and distance(position(spawn(id)),s.camp)>cfg(r,'AutoCampRadius')
+        local lost=remote and not engaged and not assist and t>=s.waitMobGrace
+        if lost then
+            -- Avoid immediately pulling the same mob over and over when
+            -- it loses hate or leashes before reaching camp.
+            s.rejected[id]=t+15000
+            r:log('Monk incoming mob lost aggro: ID '..id..'; retry after 15 seconds')
+        end
+        if engageCombat(r,s,hostile,assist) or not remote or t>=s.waitMobDeadline or lost then
             s.phase='idle';s.pullId=nil;s.pullName=nil;s.waitMobId=nil;s.nextPull=t+1500
-            status(r,s,'Mob arrival wait complete')
+            status(r,s,lost and 'Mob lost aggro before arriving; temporarily skipping' or 'Mob arrival wait complete')
         elseif campDistance(s)<=cfg(r,'AutoCampRadius') then
             abilityTick(r,s,'recovery',hostile)
         end
@@ -1065,9 +1072,15 @@ function M.classmainloop(r)
     if s.phase=='awaitAggro' then
         observeAction(r,s,t)
         if num('Me.Casting.ID')>0 and t<s.engageDeadline then return end
-        if engaged then
+        local me,actualTarget=num('Me.ID'),num('Target.ID')
+        local pct=num('Me.PctAggro')
+        local tagHate=actualTarget==s.pullId and ((pct>0 and pct<=100) or
+            (me>0 and num('Me.TargetOfTarget.ID')==me))
+        if #hostile>0 or tagHate then
             returnHome(r,s,'Aggro confirmed',hostile[1] or s.pullId);return
         end
+        -- A damaging AA can flip CombatState before the mob is actually
+        -- on our hate list. Keep waiting for concrete evidence.
         if t>=s.engageDeadline or not eligible(r,s,s.pullId) then
             reject(r,s,'Pull not confirmed before timeout');return
         end
