@@ -115,12 +115,22 @@ seconds and switches if a materially shorter path becomes available.
 The monk uses **Distant Strike** when ready, falling back to **Throw Stone**.
 It resolves the actual AA ID, confirms its target and ability activation
 using casting/cooldown state, and retries or moves closer until aggro is
-confirmed (default timeout 15 seconds). It returns to the camp's saved
-XYZ coordinates and waits for the mob to enter the camp radius or for
-aggro to be lost. At camp, the optional handoff uses MQ2Melee's
-`/killthis` for a confirmed combat target. MQ2Melee (when loaded and enabled) handles all
-attack, stick, abilities, disciplines and AA usage. AutoLua does not
-change MQ2Melee settings or stop its combat. The next pull waits for
+confirmed (default timeout 15 seconds). Confirmed activation gets a
+three-second aggro grace period before a fallback approach. During the
+outbound and return navigation, AutoLua temporarily suspends an already
+enabled MQ2Melee so its automatic feign-death and combat behavior cannot
+interrupt the pull. It restores the plugin's prior enabled state at camp
+or on cancellation, without saving changes to MQ2Melee's configuration.
+A manual feign or invisibility pauses navigation and retains the return
+state until the monk is standing and visible again.
+
+At camp, the monk scans all occupied extended-target slots for living
+NPCs. It prioritizes an eligible group assist target, otherwise the
+lowest-health eligible NPC, and hands the confirmed target to MQ2Melee
+using `/killthis`. Other mobs already in camp can be fought immediately,
+even while the pulled mob is still on its way. MQ2Melee handles all
+attack, stick, abilities, disciplines and AA usage, and AutoLua does not
+interrupt a live MQ2Melee engagement. The next pull waits for
 combat to finish and for
 monk/group health (default 80%), endurance (50%) and healer mana (50%).
 If the group starts fighting or falls below readiness during approach,
@@ -144,7 +154,8 @@ For an already-installed GUI/Selo overlay, apply only
 `test_monk.lua` as shown above. No rebuild or relog is required. The
 offline suite exercises the pull cycle, 3D camp coordinates, group
 readiness, native spawn enumeration, path ranking, AA activation and
-retry, rescan, mob-arrival wait, GUI persistence, timeout, cancellation,
+retry, rescan, feign pause/resume, plugin suspension/restoration, multi-target
+combat handoff, mob-arrival wait, GUI persistence, timeout, cancellation,
 and zone invalidation. Existing character INI settings are preserved
 when upgrading; the new path limit and timeout are initialized on first
 run. Live pathing and ability activation still need verification in the

@@ -54,10 +54,25 @@ end
 local function stopNav(r,s)
     if s.navOwned then command(r,'/nav stop');s.navOwned=false end
 end
+-- Pull movement belongs to AutoLua; MQ2Melee resumes in camp. Do not
+-- enable a plugin that was already disabled before the pull.
+local function suspendMelee(r,s)
+    if not s.meleeSuspended and yes('Plugin[MQ2Melee].IsLoaded') and yes('Melee.Enable') then
+        command(r,'/melee off');s.meleeSuspended=true
+        r:log('Monk: MQ2Melee suspended for pull movement')
+    end
+end
+local function resumeMelee(r,s)
+    if s.meleeSuspended then
+        if yes('Plugin[MQ2Melee].IsLoaded') and not yes('Melee.Enable') then command(r,'/melee on') end
+        s.meleeSuspended=nil
+        r:log('Monk: MQ2Melee restored')
+    end
+end
 local function reset(r,s,message)
-    stopNav(r,s)
+    stopNav(r,s);resumeMelee(r,s)
     s.phase='idle';s.pullId=nil;s.pullName=nil;s.handoffId=nil;s.nextPull=now()+1000
-    s.action=nil;s.engageDeadline=nil;s.approachLimit=nil;s.waitMobId=nil
+    s.action=nil;s.engageDeadline=nil;s.approachLimit=nil;s.waitMobId=nil;s.pausedAt=nil
     if message then status(r,s,message) end
 end
 local function invalidateCamp(r,s,message)
@@ -97,7 +112,7 @@ local function startNav(r,s,dest,range)
     return true
 end
 local function returnHome(r,s,reason,waitMobId)
-    stopNav(r,s)
+    stopNav(r,s);suspendMelee(r,s)
     s.phase='returning';s.nextNav=0;s.waitMobId=waitMobId;s.returnDeadline=now()+120000
     s.action=nil;s.engageDeadline=nil;s.approachLimit=nil
     status(r,s,'Returning to camp: '..reason)
@@ -110,10 +125,9 @@ local function hostiles()
     for i=1,slots do
         local e='Me.XTarget['..i..']'
         local id=num(e..'.ID')
-        local typ=read(e..'.Type')
-        if id>0 and not seen[id] and typ~='Corpse' and not yes(e..'.Dead') and
-           (read(e..'.TargetType')=='Auto Hater' or num(e..'.PctAggro')>0 or
-            (typ=='NPC' and yes(e..'.Aggressive'))) then
+        -- Like bard/warrior, consider every live NPC in occupied XTarget
+        -- slots, not just Auto Hater roles or mobs with nonzero personal aggro.
+        if not seen[id] and npc(id) then
             seen[id]=true;list[#list+1]=id
         end
     end
@@ -292,7 +306,7 @@ local function observeAction(r,s,t)
     local a=s.action
     if not a or a.confirmed then return end
     if read(a.ready)=='FALSE' or num('Me.Casting.ID')>0 then
-        a.confirmed=true
+        a.confirmed=true;a.aggroGrace=t+3000
         r:log('Monk pull activation confirmed: '..a.name..' target='..s.pullId)
         status(r,s,'Activated '..a.name..'; waiting for aggro')
     elseif t>=a.confirmAt and not a.reported then
@@ -304,25 +318,64 @@ end
 -- MQ2Melee owns all attack, stick, skills, disciplines and AA rotation.
 -- /killthis is its documented way to hand over a confirmed combat target.
 local function handoffCombat(r,s,hostile,assist)
-    if cfg(r,'UseMelee')~=1 or not s.camp or campDistance(s)>cfg(r,'AutoCampRadius') or not yes('Plugin[MQ2Melee].IsLoaded') or
-       not yes('Melee.Enable') or not yes('Melee.MeleeMode') then return end
-    if yes('Melee.Combat') or yes('Me.Combat') or yes('Stick.Active') or yes('Navigation.Active') then return end
+    if cfg(r,'UseMelee')~=1 or not s.camp or campDistance(s)>cfg(r,'AutoCampRadius') then return end
+    if not yes('Plugin[MQ2Melee].IsLoaded') or not yes('Melee.Enable') or not yes('Melee.MeleeMode') then
+        r:logAction('monk-melee-disabled','Monk combat handoff waiting: MQ2Melee must be loaded, enabled and in melee mode')
+        return
+    end
+    if yes('Navigation.Active') then return end
+    if yes('Melee.Combat') then
+        -- MQ2Melee normally clears dead targets itself; don't let a stale
+        -- engagement prevent all further handoffs if the target vanished.
+        local active=num('Melee.Target')
+        local e=spawn(active)
+        if active<=0 or (num(e..'.ID')==active and read(e..'.Type')=='NPC' and not yes(e..'.Dead')) then return end
+        command(r,'/melee reset')
+        r:log('Monk combat handoff: cleared stale MQ2Melee target '..active)
+        return
+    end
     local function valid(id)
         if not npc(id) then return false end
         local e=spawn(id)
         local hp=num(e..'.PctHPs')
         local threshold=cfg(r,'AutoAssistAt')
-        return yes(e..'.LineOfSight') and ((hp>0 and hp<=threshold) or (hp==0 and threshold==100)) and
+        return read(e..'.CanEngage')~='FALSE' and yes(e..'.LineOfSight') and
+            ((hp>0 and hp<=threshold) or (hp==0 and threshold==100)) and
             distance(position(e),s.camp)<=cfg(r,'AutoCampRadius')
     end
     local id=valid(assist) and assist or nil
-    if not id then for _,candidate in ipairs(hostile) do if valid(candidate) then id=candidate;break end end end
-    if not id then return end
-    if num('Target.ID')~=id then command(r,'/squelch /target id '..id);return end
+    local lowest=101
+    if not id then
+        for _,candidate in ipairs(hostile) do
+            if valid(candidate) then
+                local hp=num(spawn(candidate)..'.PctHPs')
+                if hp==0 then hp=100 end
+                if hp<lowest then id=candidate;lowest=hp end
+            end
+        end
+    end
+    if not id then
+        local details={}
+        for _,candidate in ipairs(hostile) do
+            local e=spawn(candidate)
+            details[#details+1]=string.format('%d hp=%d campdist=%.0f los=%s',candidate,
+                num(e..'.PctHPs'),distance(position(e),s.camp),read(e..'.LineOfSight'))
+            if #details>=5 then break end
+        end
+        r:logAction('monk-no-camp-target','Monk combat handoff waiting: no eligible NPC inside camp (XTargets='..#hostile..') '..table.concat(details,'; '))
+        return
+    end
+    if num('Target.ID')~=id then
+        command(r,'/squelch /target id '..id)
+        r:logAction('monk-target:'..id,'Monk combat target request id='..id)
+        return true
+    end
     if s.handoffId~=id or now()>=(s.nextHandoff or 0) then
         command(r,'/killthis')
         s.handoffId=id;s.nextHandoff=now()+2000
+        r:log('Monk combat handoff: MQ2Melee target '..id)
     end
+    return true
 end
 
 function M.classvarsetup(r)
@@ -397,10 +450,21 @@ function M.classmainloop(r)
         invalidateCamp(r,s,'Zone or respawn changed; set a new camp')
         return
     end
-    if yes('Me.Invis') or read('Me.State')=='FEIGN' then
-        reset(r,s,'Paused: invisible or feigned');return
-    end
     if cfg(r,'ReturnToCamp')~=1 and s.camp then invalidateCamp(r,s,'Camp disabled') end
+    if yes('Me.Invis') or read('Me.State')=='FEIGN' then
+        stopNav(r,s)
+        s.pausedAt=s.pausedAt or t
+        status(r,s,'Paused: invisible or feigned (pull state retained)')
+        return
+    end
+    if s.pausedAt then
+        local elapsed=t-s.pausedAt
+        -- Keep the original camp and pull, without counting time spent feigned.
+        for _,key in ipairs({'deadline','engageDeadline','returnDeadline','waitMobDeadline','waitMobGrace'}) do
+            if s[key] then s[key]=s[key]+elapsed end
+        end
+        s.pausedAt=nil;s.nextNav=0
+    end
     if followName(r) then
         if s.camp then invalidateCamp(r,s,'Following; camp disabled') end
         if not yes('Me.Combat') and #hostiles()==0 and num('Spawn[pc '..followName(r)..'].ID')>0 then r:call('followtoon') end
@@ -414,7 +478,7 @@ function M.classmainloop(r)
         status(r,s,'Set camp here first')
         return
     end
-    if s.phase~='idle' and meleeActive then
+    if (s.phase=='outbound' or s.phase=='awaitAggro' or s.phase=='returning') and meleeActive then
         reset(r,s,'MQ2Melee engaged; waiting for combat to finish');return
     end
     if cfg(r,'AutoPull')~=1 and (s.phase=='outbound' or s.phase=='awaitAggro') then
@@ -422,7 +486,7 @@ function M.classmainloop(r)
     end
     if s.phase=='returning' then
         if campDistance(s)<=math.min(12,cfg(r,'AutoCampRadius')) then
-            stopNav(r,s);s.nextPull=t+1500
+            stopNav(r,s);resumeMelee(r,s);s.nextPull=t+1500
             local waitId=s.waitMobId
             if npc(waitId) and distance(position(spawn(waitId)),s.camp)>cfg(r,'AutoCampRadius') then
                 s.phase='waitingMob';s.waitMobDeadline=t+120000;s.waitMobGrace=t+3000
@@ -441,7 +505,7 @@ function M.classmainloop(r)
     end
     if s.phase=='waitingMob' then
         local id=s.waitMobId
-        if not npc(id) or distance(position(spawn(id)),s.camp)<=cfg(r,'AutoCampRadius') or
+        if meleeActive or handoffCombat(r,s,hostile,assist) or not npc(id) or distance(position(spawn(id)),s.camp)<=cfg(r,'AutoCampRadius') or
            t>=s.waitMobDeadline or (not engaged and t>=s.waitMobGrace) then
             s.phase='idle';s.pullId=nil;s.pullName=nil;s.waitMobId=nil;s.nextPull=t+1500
             status(r,s,'Mob arrival wait complete')
@@ -489,7 +553,7 @@ function M.classmainloop(r)
         local ready,reason=groupReady(r)
         if not ready then returnHome(r,s,reason);return end
         if assist then returnHome(r,s,'Group already fighting');return end
-        if t<(s.nextAction or 0) then return end
+        if t<(s.nextAction or 0) or (s.action and s.action.aggroGrace and t<s.action.aggroGrace) then return end
         local method=pullMethod()
         if not method then return end
         if not canTag(s.pullId,method) or (s.action and s.action.reported and not s.approachLimit and
@@ -527,6 +591,7 @@ function M.classmainloop(r)
     if not method then status(r,s,'Waiting for Distant Strike or Throw Stone');s.nextPull=t+1000;return end
     local id,path=selectTarget(r,s)
     if not id then status(r,s,s.scanSummary or 'No eligible reachable NPC in pull radius');s.nextPull=t+1000;return end
+    suspendMelee(r,s)
     s.phase='outbound';s.deadline=t+45000
     s.action=nil;s.engageDeadline=nil;s.approachLimit=nil;s.waitMobId=nil
     setPullTarget(r,s,id,path)
