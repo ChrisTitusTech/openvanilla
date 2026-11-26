@@ -217,6 +217,17 @@ patch --dry-run -p1 < "$overlay/warrior-defense-policy.patch"
 patch -p1 < "$overlay/warrior-defense-policy.patch"
 ```
 
+Apply `warrior-camp-engagement.patch` next. The tank can engage a validated
+living encounter beyond the legacy 60-unit gate when it is visible and
+within the current zone's camp radius plus 40 units (minimum 60, maximum
+100 units). This preserves the hostile scan cap and avoids standing idle
+while the monk fights a mob slightly outside the default tank radius.
+
+```bash
+patch --dry-run -p1 < "$overlay/warrior-camp-engagement.patch"
+patch -p1 < "$overlay/warrior-camp-engagement.patch"
+```
+
 ## Monk AutoLua
 
 The new native Lua class module is selected automatically on a monk by

@@ -1,0 +1,67 @@
+--- a/warrior.lua
++++ b/warrior.lua
+@@ -212,6 +212,19 @@
+         if count>0 and seen>=count then break end
+     end
+     return list
++end
++-- The usual 60-unit gate must not strand the tank when an actual
++-- encounter stops slightly farther away but remains within camp. Keep the
++-- existing 100-unit hostile scan cap; never extend pursuit based solely on
++-- distance from the warrior or an unvalidated camp anchor.
++local function inCampEngagement(r,chosen)
++    if r:get({},'ReturnToCamp')~=1 or r:get({},'AutoCampZone')~=num(r,'Zone.ID') or
++        num(r,'Zone.ID')<=0 or not yes(r,'Target.LineOfSight') then return false end
++    local y,x,z=tonumber(read(r,'Target.Y')),tonumber(read(r,'Target.X')),tonumber(read(r,'Target.Z'))
++    local cy,cx,cz=r:get({},'AutoCampY'),r:get({},'AutoCampX'),r:get({},'AutoCampZ')
++    if not (y and x and z and cy and cx and cz) then return false end
++    local radius=math.min(100,math.max(60,(r:get({},'AutoCampRadius') or 30)+40))
++    return chosen.distance<=100 and (y-cy)^2+(x-cx)^2+(z-cz)^2<=radius^2
+ end
+ function M.tick(r)
+     local w=state(r);local now=mq.gettime()
+@@ -311,7 +324,7 @@
+         return
+     end
+     if r:get({},'UseMelee')==1 and chosen.hp<=(r:get({},'AutoAssistAt') or 100) then
+-        if not combat and chosen.distance<60 then
++        if not combat and (chosen.distance<60 or inCampEngagement(r,chosen)) then
+             if not yes(r,'Me.Standing') then action(r,'stand',500,'/stand');return end
+             if action(r,'attack',500,'/squelch /attack on') then
+                 r:log('Engagement attack request id='..chosen.id..' elapsed_ms='..(now-w.firstHostile)..' source='..(chosen.source or 'xtarget')..' distance='..chosen.distance)
+--- a/tests/test.lua
++++ b/tests/test.lua
+@@ -367,6 +367,33 @@
+ eq(wr.warriorBadAggro,1,'only hostile XTarget counted')
+ print('PASS warrior nonblocking target/attack/stick; sparse XTarget and missing-assist fallback')
+
++-- Reproduce the live 62.31-unit stalled Fereth procurator. A valid camp
++-- encounter can be acquired beyond 60; remote or obstructed targets cannot.
++do
++    local saved=mock.values
++    mock.values={['Zone.ID']=815,['Me.XTarget']=1,['Me.XTargetSlots']=13,
++        ['Me.XTarget[1].ID']=25086,['Me.XTarget[1].Type']='NPC',
++        ['Me.XTarget[1].PctHPs']=95,['Me.XTarget[1].Distance']=62.31,
++        ['Me.XTarget[1].PctAggro']=50,['Me.Combat']='FALSE',['Me.Standing']='TRUE',
++        ['Me.GroupAssistTarget.ID']=0,['Group.MainAssist.ID']=0,['Target.ID']=25086,
++        ['Target.Y']=-1662.32,['Target.X']=-1768.75,['Target.Z']=5.35,
++        ['Target.LineOfSight']='TRUE'}
++    local w=setup('war');w:set({},'ReturnToCamp',1);w:set({},'AutoCampZone',815)
++    w:set({},'AutoCampY',-1724.63);w:set({},'AutoCampX',-1768.75);w:set({},'AutoCampZ',5.35)
++    w:set({},'AutoCampRadius',30);w:set({},'UseMelee',1);w:set({},'AutoAssistAt',100)
++    w.funcs.checkaggro=function() end;w.funcs.sitcheck=function() end
++    War.tick(w);eq(mock.commands[#mock.commands],'/squelch /attack on','engage the stalled in-camp NPC')
++    mock.time=mock.time+600
++    mock.values['Target.Y']=-1600;local count=#mock.commands
++    War.tick(w);eq(#mock.commands,count,'do not chase remote hostile beyond camp')
++    mock.values['Target.Y']=-1662.32;mock.values['Target.LineOfSight']='FALSE'
++    War.tick(w);eq(#mock.commands,count,'do not extend engagement through geometry')
++    mock.values['Target.LineOfSight']='TRUE';w:set({},'AutoCampZone',999)
++    War.tick(w);eq(#mock.commands,count,'do not use an anchor from another zone')
++    mock.values=saved
++end
++print('PASS warrior bounded camp engagement beyond sixty units')
++
+ -- Discipline retry pacing and async confirmation, with engagement unaffected during pending activation.
+ local spell='Stout Defense Rk. II'
+ mock.values['Me.ActiveDisc.Name']='NULL'
