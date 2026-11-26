@@ -27,6 +27,7 @@ local classes = {
         {'PullMinHP', 'Minimum monk/group HP (%)', 'number', 50, 100},
         {'PullMinEndurance', 'Minimum endurance (%)', 'number', 0, 100},
         {'PullMinHealerMana', 'Minimum healer mana (%)', 'number', 0, 100},
+        {'PullMinTankEndurance', 'Minimum tank endurance (%)', 'number', 0, 100},
         {'PullName', 'NPC name contains (NULL = any)', 'text'},
     },
     brd = {

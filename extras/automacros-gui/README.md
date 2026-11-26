@@ -206,7 +206,8 @@ survival. No forced target movement, area damage, veteran AA or
 equipment clicky rotation is enabled.
 
 The next pull waits for combat to finish and for monk/group health
-(default 80%), endurance (50%) and healer mana (50%). During safe
+(default 80%), monk endurance (50%), healer mana (50%) and tank endurance
+(30%, when available for warrior, paladin or shadow knight). During safe
 downtime the monk uses available endurance recovery, respects the
 learned recovery discipline's activation cap (Breather Rk. III: 29%),
 and sits until its configured health/endurance requirements are met.

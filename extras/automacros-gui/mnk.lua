@@ -12,7 +12,7 @@ local settings = {
     {'PullRadius','int',350}, {'PullZRadius','int',90},
     {'PullMaxPath','int',1000}, {'PullTimeout','int',15},
     {'PullMinHP','int',80}, {'PullMinEndurance','int',50},
-    {'PullMinHealerMana','int',50}, {'PullName','string','NULL'},
+    {'PullMinHealerMana','int',50}, {'PullMinTankEndurance','int',30}, {'PullName','string','NULL'},
     {'MonkUseAbilities','int',1}, {'MonkAutoFD','int',1}, {'MonkEmergencyFDHP','int',50},
 }
 local function read(expr) return mq.parse('${'..expr..'}') end
@@ -216,6 +216,7 @@ local function groupReady(r)
         return false,string.format('Waiting for endurance (%d%% / %d%% required)',endu,cfg(r,'PullMinEndurance'))
     end
     local manaMin=cfg(r,'PullMinHealerMana')
+    local tankEndMin=cfg(r,'PullMinTankEndurance')
     for i=1,math.min(5,num('Group.Members')) do
         local e='Group.Member['..i..']'
         if yes(e..'.Offline') or yes(e..'.OtherZone') or num(e..'.ID')<=0 then
@@ -224,6 +225,12 @@ local function groupReady(r)
         if num(e..'.PctHPs')<cfg(r,'PullMinHP') then return false,'Waiting for group health' end
         if yes(e..'.Aggressive') then return false,'Waiting for group combat to finish' end
         local class=read(e..'.Class.ShortName')
+        if tankEndMin>0 and (class=='WAR' or class=='PAL' or class=='SHD') then
+            local tankEnd=tonumber(read(e..'.PctEndurance'))
+            if tankEnd and tankEnd>=0 and tankEnd<tankEndMin then
+                return false,string.format('Waiting for tank endurance (%d%% / %d%% required)',tankEnd,tankEndMin)
+            end
+        end
         if manaMin>0 and (class=='CLR' or class=='DRU' or class=='SHM') and num(e..'.PctMana')<manaMin then
             return false,'Waiting for healer mana'
         end
