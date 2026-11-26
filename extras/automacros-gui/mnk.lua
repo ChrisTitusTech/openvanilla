@@ -13,7 +13,7 @@ local settings = {
     {'PullMaxPath','int',1000}, {'PullTimeout','int',15},
     {'PullMinHP','int',80}, {'PullMinEndurance','int',50},
     {'PullMinHealerMana','int',50}, {'PullName','string','NULL'},
-    {'MonkUseAbilities','int',1}, {'MonkBurnAll','int',0},
+    {'MonkUseAbilities','int',1},
 }
 local function read(expr) return mq.parse('${'..expr..'}') end
 local function num(expr) return tonumber(read(expr)) or 0 end
@@ -87,7 +87,7 @@ end
 local function stopCombat(r,s)
     if s.attackOwned then command(r,'/squelch /attack off') end
     if s.stickOwned then command(r,'/stick off') end
-    s.attackOwned=nil;s.stickOwned=nil;s.combatId=nil;s.combatStarted=nil;s.nextAttack=nil;s.nextStick=nil
+    s.attackOwned=nil;s.stickOwned=nil;s.combatId=nil;s.nextAttack=nil;s.nextStick=nil
 end
 local function reset(r,s,message)
     stopNav(r,s);stopCombat(r,s)
@@ -504,8 +504,23 @@ local function abilityTick(r,s,mode,hostile)
     local dist=tonumber(read(e..'.Distance3D'))
     if range<=0 or not dist or dist>range or not yes(e..'.LineOfSight') then return false end
     local targetHP=num(e..'.PctHPs')
-    local burn=cfg(r,'MonkBurnAll')==1 or yes(e..'.Named') or #hostile>1 or
-        (s.combatStarted and now()-s.combatStarted>=15000 and targetHP>40)
+    -- Count only live encounter NPCs physically inside the anchored camp.
+    -- Extended targets still on the way or elsewhere in the zone are not adds.
+    local burn=yes(e..'.Named')
+    if not burn then
+        local inCamp,includesTarget=0,false
+        for _,id in ipairs(hostile) do
+            if id==s.combatId then includesTarget=true end
+            if distance(position(spawn(id)),s.camp)<=cfg(r,'AutoCampRadius') then
+                inCamp=inCamp+1
+            end
+        end
+        -- A group-assist target may be engaged before it appears on our XTarget.
+        if not includesTarget and distance(position(e),s.camp)<=cfg(r,'AutoCampRadius') then
+            inCamp=inCamp+1
+        end
+        burn=inCamp>=3
+    end
     if aa("Zan Fi's Whistle",buff) or d('drunken',buff) or d('wu',buff) then return true end
     if burn and hp>65 and (targetHP==0 or targetHP>20) then
         if d('form') or (endu>=70 and aa("Ton Po's Stance",buff)) or
@@ -569,7 +584,6 @@ local function engageCombat(r,s,hostile,assist)
     end
     if not yes('Me.Standing') then command(r,'/stand');return true end
     local t=now()
-    if s.combatId~=id then s.combatStarted=t end
     s.combatId=id
     if not yes('Me.Combat') then
         if t>=(s.nextAttack or 0) then

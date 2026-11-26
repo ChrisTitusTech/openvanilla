@@ -144,8 +144,9 @@ Synergy, Fists, Phantom, Fang, Curse and Shuriken discipline lines,
 combat buff AAs and disciplines, Mend, Purify Body when needed,
 endurance recovery and the monk aura. Defensive discs are prioritized
 when health is low. Major damage discs and burn AAs are used against
-named mobs, multiple hostiles, or fights lasting at least 15 seconds.
-Enable **Burn on every fight** to use them on ordinary encounters too.
+named targets or when at least three live encounter NPCs are inside
+the configured camp radius. Ordinary fights, elapsed fight time and
+extended targets outside camp do not trigger burns.
 Long-duration active discs are not overwritten. Offensive abilities require a
 valid target and range; readiness, health and endurance reserves are checked. Requests are
 confirmed from cooldown or cast state and failed requests back off.
