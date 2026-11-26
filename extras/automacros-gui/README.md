@@ -1,0 +1,58 @@
+# AutoLua configuration window
+
+In-game ImGui configuration for the locally installed AutoLua 1.5 port
+of AutoMacros. This is an optional overlay, not a replacement for the
+underlying AutoLua scripts.
+
+## In-game use
+
+Start AutoLua normally with `/lua run automacros`. The configuration
+window opens automatically. Close or hide it without stopping the script;
+`/autolua gui` opens it again.
+
+- All classes: melee, return to camp, camp radius, assist HP, follow,
+  fellowship, instant release, verbose notifications and backoff.
+- Bard: slow, mez and bring your own spells.
+- Cleric: resurrection, Promised heals, Divine buff, druid buffs, heal
+  and mana thresholds, mount item, Quiet Miracle recipient and tank
+  selection. The cure suppression setting applies only to this session.
+
+Checkboxes apply immediately on the next runtime event pump. Sliders and
+the mount item use their individual Apply buttons. The existing
+`config/automacros/Auto_Player_<character>.ini` remains the single
+persistent configuration per character. The existing aliases still work.
+Bring your own spells affects spell setup when the script restarts.
+
+After installing or updating this overlay, restart only AutoLua on the
+character when safe to do so:
+
+```text
+/lua stop automacros
+/lua run automacros
+```
+
+No client restart or MacroQuest rebuild is needed.
+
+## Apply to an existing AutoLua 1.5 installation
+
+The AutoLua sources are not tracked in this repository; the overlay is
+kept here so it survives removal of the local build output. The integration
+patch targets the existing AutoLua 1.5 runtime and offline test suite.
+From the repository root:
+
+```bash
+overlay="$PWD/extras/automacros-gui"
+lua_dir="$PWD/build/linux-x64/bin/release/lua"
+cd "$lua_dir/automacros"
+patch --dry-run -p1 < "$overlay/integration.patch"
+patch -p1 < "$overlay/integration.patch"
+cp "$overlay/gui.lua" gui.lua
+cp "$overlay/test_gui.lua" tests/test_gui.lua
+cd "$lua_dir"
+luajit automacros/tests/test.lua
+```
+
+Apply the integration patch once; for an already patched installation,
+copy the updated GUI and test modules instead. The tests use mocked MQ
+data and do not operate on the game or real INIs. Live rendering and
+in-game interaction are still to be verified.

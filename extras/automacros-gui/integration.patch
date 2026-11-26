@@ -1,0 +1,63 @@
+--- a/init.lua
++++ b/init.lua
+@@ -33,8 +33,15 @@
+ local logic=require('automacros.'..class)
+ local r=R.new(shared,logic,name)
+ r:register()
++local guiOK,gui=pcall(function() return require('automacros.gui').attach(r,class) end)
++if guiOK then
++    r.gui=gui
++else
++    r:log('GUI unavailable: '..tostring(gui))
++    print('[AutoLua] GUI unavailable; commands remain available.')
++end
+ r:log('Starting AutoLua 1.5 class='..class)
+-print('[AutoLua] Starting '..class:upper()..'; /autolua help | /autolua status | /autolua stop')
++print('[AutoLua] Starting '..class:upper()..'; /autolua gui | /autolua help | /autolua stop')
+ -- LuaJIT supports yielding from pcall/xpcall; any unexpected error is logged.
+ local ok,err=xpcall(function() r:call('main') end,debug.traceback)
+ if not ok then
+--- a/runtime.lua
++++ b/runtime.lua
+@@ -305,11 +305,13 @@
+     self.queue[#self.queue+1]={name=name,args={...}}
+ end
+ function R:pump()
++    if self.gui then self.gui.ready=true end
+     mq.doevents()
+     local pending=self.queue
+     self.queue={}
+     for _,job in ipairs(pending) do
+         if job.name=='@command' then self:dispatch(unpack(job.args))
++        elseif job.name=='@gui' then self.gui:apply(unpack(job.args))
+         else self:call(job.name,unpack(job.args)) end
+     end
+     local now=mq.gettime()
+@@ -324,13 +326,18 @@
+ function R:dispatch(name,...)
+     name=(name or 'help'):lower():gsub('^/','')
+     local rest=table.concat({...},' ')
++    if name=='gui' then
++        if self.gui then self.gui.open=true
++        else print('[AutoLua] GUI unavailable') end
++        return
++    end
+     if name=='stop' then return self:stop() end
+     if name=='status' then
+         print('[AutoLua] '..self.character..' DanNet queries='..self.counts.queries..' timeouts='..self.counts.queryTimeouts..' castRequests='..self.counts.castRequests)
+         return
+     end
+     if name=='help' then
+-        local names={'stop','status'}
++        local names={'stop','status','gui'}
+         for n in pairs(self.aliases) do names[#names+1]=n end
+         for n in pairs(self.binds) do names[#names+1]=n end
+         table.sort(names);print('[AutoLua] /autolua '..table.concat(names,', '));return
+--- a/tests/test.lua
++++ b/tests/test.lua
+@@ -821,3 +821,5 @@
+ eq(Bard.scheduleCombat(rotation),true,'different target re-evaluated')
+ eq(selected,'Test Slow','new target slow')
+ print('PASS target-specific slow pacing')
++
++require('automacros.tests.test_gui')(setup,mock,eq)
