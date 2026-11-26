@@ -161,6 +161,7 @@ end
 
 function G:drawField(imgui, field)
     local key,label,kind=field[1],field[2],field[3]
+    if self.class=='mnk' and key=='UseMelee' then label='Hand off combat to MQ2Melee' end
     local value=self.r:get({},key)
     if value==nil then return end
     if kind=='toggle' then
@@ -222,7 +223,7 @@ function G:draw(imgui)
                 for _,field in ipairs(classes[self.class]) do self:drawField(imgui,field) end
                 if self.class=='mnk' then
                     imgui.TextWrapped(self.r.monk and self.r.monk.status or 'Set camp here first.')
-                    imgui.TextWrapped('Set camp here, then enable Auto pull. MQ2Nav needs a loaded zone mesh.')
+                    imgui.TextWrapped('Set camp here, then enable Auto pull. MQ2Nav needs a loaded zone mesh. MQ2Melee manages fighting.')
                 else
                     imgui.TextWrapped('Bring your own spells applies to spell setup on restart.')
                 end

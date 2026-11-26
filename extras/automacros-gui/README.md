@@ -12,8 +12,9 @@ window opens automatically. Close or hide it without stopping the script;
 current startup phase and elapsed time. Settings become visible as soon as
 they are loaded and unlock once the runtime can process changes.
 
-- All classes: melee, return to camp, camp radius, assist HP, follow,
-  fellowship, instant release, verbose notifications and backoff.
+- All classes: melee (MQ2Melee handoff for Monk), return to camp, camp
+  radius, assist HP, follow, fellowship, instant release, verbose
+  notifications and backoff.
 - Bard: slow, mez and bring your own spells.
 - Monk: auto pull, pull radius, vertical radius, NPC name filter and
   readiness thresholds. See the monk section below.
@@ -101,15 +102,22 @@ The new native Lua class module is selected automatically on a monk by
 
 Auto pull is off on the first run and requires a freshly anchored camp
 each script session or zone change. A loaded MQ2Nav zone mesh is required.
-The monk chooses a living, targetable, uninjured non-pet NPC within the
-configured radius and vertical limit, excluding special service classes.
+The monk chooses a living, targetable non-pet NPC within the configured
+radius and vertical limit, excluding special service classes. Unknown or
+partial NPC HP readings do not disqualify a living pull candidate.
 An optional literal name substring restricts the NPC selection further.
-If no idle target can be reached, the GUI reports the reason.
+If no idle target can be reached, the GUI and per-character log report
+the candidate count and rejection reasons, including no NPCs in the
+configured radius, vertical range, name filter and missing nav paths.
 
 The monk uses **Distant Strike** when ready, falling back to **Throw Stone**.
 It approaches via MQ2Nav when necessary, confirms its target, waits for
-hostile aggro or combat state, returns to the camp's saved XYZ coordinates
-and fights from camp. The next pull waits for combat to finish and for
+hostile aggro or combat state, and returns to the camp's saved XYZ
+coordinates. At camp, the optional handoff uses MQ2Melee's `/killthis` for
+a confirmed combat target. MQ2Melee (when loaded and enabled) handles all
+attack, stick, abilities, disciplines and AA usage. AutoLua does not
+change MQ2Melee settings or stop its combat. The next pull waits for
+combat to finish and for
 monk/group health (default 80%), endurance (50%) and healer mana (50%).
 If the group starts fighting or falls below readiness during approach,
 the monk returns to camp. Failed/unreachable targets are skipped for
@@ -122,8 +130,10 @@ Commands:
 - `/autolua pullradius 200` sets a radius from 50 to 500 units.
 - `/autolua pullstatus` displays the current state.
 - `/autolua camphere` re-anchors camp and `/autolua campoff` clears it.
-- `/autolua backoff` stops pulling and melee; `/autolua stop` stops the
-  script and its owned movement. The GUI Stop AutoLua button does the same.
+- `/autolua backoff` stops pulling and future MQ2Melee handoffs;
+  `/autolua stop` stops the script and its owned navigation. The GUI
+  Stop AutoLua button does the same. Existing MQ2Melee combat is left
+  to the plugin and its own controls.
 
 For an already-installed GUI/Selo overlay, apply only
 `monk-integration.patch`, copy the updated `gui.lua`, new `mnk.lua`, and

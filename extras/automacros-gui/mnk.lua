@@ -39,7 +39,7 @@ local function spawn(id) return 'Spawn[id '..id..']' end
 local function npc(id)
     if not id or id<=0 then return false end
     local e=spawn(id)
-    return num(e..'.ID')==id and read(e..'.Type')=='NPC' and yes(e..'.Targetable') and num(e..'.PctHPs')>0
+    return num(e..'.ID')==id and read(e..'.Type')=='NPC' and yes(e..'.Targetable') and not yes(e..'.Dead')
 end
 local function followName(r)
     local name=cfg(r,'FollowToonName') or ''
@@ -49,14 +49,9 @@ end
 local function stopNav(r,s)
     if s.navOwned then command(r,'/nav stop');s.navOwned=false end
 end
-local function stopMelee(r,s)
-    if s.attackOwned then command(r,'/squelch /attack off');s.attackOwned=false end
-    if s.stickOwned then command(r,'/stick off');s.stickOwned=false end
-    s.fightId=nil
-end
 local function reset(r,s,message)
-    stopNav(r,s);stopMelee(r,s)
-    s.phase='idle';s.pullId=nil;s.pullName=nil;s.nextPull=now()+1000
+    stopNav(r,s)
+    s.phase='idle';s.pullId=nil;s.pullName=nil;s.handoffId=nil;s.nextPull=now()+1000
     if message then status(r,s,message) end
 end
 local function invalidateCamp(r,s,message)
@@ -90,14 +85,13 @@ local function startNav(r,s,dest,range)
         return false
     end
     if not pathExists(dest) then return false end
-    stopMelee(r,s)
     if yes('Me.Sitting') then command(r,'/stand') end
     command(r,'/nav '..dest..' distance='..range)
     s.navOwned=true;s.navStarted=now()
     return true
 end
 local function returnHome(r,s,reason)
-    stopNav(r,s);stopMelee(r,s)
+    stopNav(r,s)
     s.phase='returning';s.nextNav=0
     status(r,s,'Returning to camp: '..reason)
 end
@@ -120,7 +114,8 @@ local function hostiles()
 end
 local function assistTarget()
     local id=num('Me.GroupAssistTarget.ID')
-    if npc(id) and num(spawn(id)..'.PctHPs')<100 then return id end
+    local hp=num(spawn(id)..'.PctHPs')
+    if npc(id) and hp>0 and hp<100 then return id end
 end
 local function groupReady(r)
     if num('Me.PctHPs')<cfg(r,'PullMinHP') then return false,'Waiting for monk health' end
@@ -153,61 +148,88 @@ end
 local function canTag(id,method)
     return method and npc(id) and num(spawn(id)..'.Distance3D')<=method.range and yes(spawn(id)..'.LineOfSight')
 end
-local function eligible(r,s,id)
-    if not npc(id) then return false end
+local function candidateReason(r,s,id)
+    if not id or id<=0 then return 'missing spawn' end
     local e=spawn(id)
+    if num(e..'.ID')~=id or read(e..'.Type')~='NPC' then return 'not NPC' end
+    if not yes(e..'.Targetable') then return 'untargetable' end
+    if yes(e..'.Dead') then return 'dead' end
+    if num(e..'.Master.ID')>0 then return 'pet' end
     local p=position(e)
-    if not p or distance(p,s.camp)>cfg(r,'PullRadius') or math.abs(p.z-s.camp.z)>cfg(r,'PullZRadius') then return false end
-    if num(e..'.Master.ID')>0 or num(e..'.PctHPs')<100 then return false end
-    -- Service NPCs (merchants, bankers, trainers, etc.) are not pull targets.
+    if not p then return 'unknown position' end
+    if math.abs(p.z-s.camp.z)>cfg(r,'PullZRadius') then return 'vertical range' end
+    if distance(p,s.camp)>cfg(r,'PullRadius') then return 'camp range' end
+    -- NPC HP is not always populated before targeting. Type/Dead, rather
+    -- than an exact 100% HP reading, identify a living pull candidate.
+    -- Unknown class (0) is possible; exclude known service classes.
     local class=num(e..'.Class.ID')
-    if class<1 or class>16 then return false end
+    if class>16 then return 'service class' end
     local filter=cfg(r,'PullName') or ''
-    if filter~='' and filter:lower()~='null' and not tostring(read(e..'.CleanName') or ''):lower():find(filter:lower(),1,true) then return false end
-    return true
+    if filter~='' and filter:lower()~='null' and not tostring(read(e..'.CleanName') or ''):lower():find(filter:lower(),1,true) then
+        return 'name filter'
+    end
 end
+local function eligible(r,s,id) return candidateReason(r,s,id)==nil end
 local function selectTarget(r,s,method)
     local radius=clamp(cfg(r,'PullRadius'),50,500)
-    local search='npc targetable nopet radius '..radius
+    -- Search from the monk, then enforce the actual camp-centered limit.
+    local searchRadius=math.ceil(radius+campDistance(s))
+    local search='npc radius '..searchRadius
     local count=num('SpawnCount['..search..']')
-    local t=now()
+    local t=now();local rejected={};local samples={}
     for i=1,count do
         local id=num('NearestSpawn['..i..','..search..'].ID')
-        if id>0 and (s.rejected[id] or 0)<=t and eligible(r,s,id) and
-           (canTag(id,method) or pathExists('id '..id)) then
+        local reason=candidateReason(r,s,id)
+        if not reason and (s.rejected[id] or 0)>t then reason='retry cooldown' end
+        if not reason and not canTag(id,method) and not pathExists('id '..id) then reason='no nav path' end
+        if not reason then
+            s.scanSummary=string.format('Found %d NPCs; selected ID %d',count,id)
             return id
         end
+        rejected[reason]=(rejected[reason] or 0)+1
+        if #samples<6 and id>0 then
+            samples[#samples+1]=string.format('%s (%d): %s',tostring(read(spawn(id)..'.CleanName')),id,reason)
+        end
+    end
+    local counts={}
+    for reason,n in pairs(rejected) do counts[#counts+1]=reason..'='..n end
+    table.sort(counts)
+    if count==0 then
+        s.scanSummary='No NPCs within '..radius..' units of camp'
+    else
+        s.scanSummary='Found '..count..' NPCs; rejected: '..table.concat(counts,', ')
+    end
+    local detail=s.scanSummary..(#samples>0 and ' | '..table.concat(samples,'; ') or '')
+    if s.lastScan~=detail or t>=(s.nextScanLog or 0) then
+        r:log('Monk pull scan: '..detail)
+        s.lastScan=detail;s.nextScanLog=t+10000
     end
 end
 local function reject(r,s,reason)
     if s.pullId then s.rejected[s.pullId]=now()+30000 end
     returnHome(r,s,reason)
 end
-local function selectFight(r,s,hostile,assist)
-    if cfg(r,'UseMelee')~=1 then stopMelee(r,s);return end
+-- MQ2Melee owns all attack, stick, skills, disciplines and AA rotation.
+-- /killthis is its documented way to hand over a confirmed combat target.
+local function handoffCombat(r,s,hostile,assist)
+    if cfg(r,'UseMelee')~=1 or not s.camp or campDistance(s)>cfg(r,'AutoCampRadius') or not yes('Plugin[MQ2Melee].IsLoaded') or
+       not yes('Melee.Enable') or not yes('Melee.MeleeMode') then return end
+    if yes('Melee.Combat') or yes('Me.Combat') or yes('Stick.Active') or yes('Navigation.Active') then return end
     local function valid(id)
         if not npc(id) then return false end
         local e=spawn(id)
-        return yes(e..'.LineOfSight') and num(e..'.PctHPs')<=cfg(r,'AutoAssistAt') and
-            ((s.camp and distance(position(e),s.camp)<=cfg(r,'AutoCampRadius')) or
-             (not s.camp and num(e..'.Distance3D')<=cfg(r,'AutoCampRadius')))
+        local hp=num(e..'.PctHPs')
+        local threshold=cfg(r,'AutoAssistAt')
+        return yes(e..'.LineOfSight') and ((hp>0 and hp<=threshold) or (hp==0 and threshold==100)) and
+            distance(position(e),s.camp)<=cfg(r,'AutoCampRadius')
     end
     local id=valid(assist) and assist or nil
     if not id then for _,candidate in ipairs(hostile) do if valid(candidate) then id=candidate;break end end end
-    if not id then stopMelee(r,s);return end
-    if s.fightId~=id then stopMelee(r,s);s.fightId=id end
+    if not id then return end
     if num('Target.ID')~=id then command(r,'/squelch /target id '..id);return end
-    if not yes('Me.Combat') then command(r,'/squelch /attack on');s.attackOwned=true end
-    if not yes('Stick.Active') and not yes('Navigation.Active') then
-        local range=clamp(math.floor(num('Target.MaxRangeTo')*.75),5,25)
-        command(r,'/stick '..range..' moveback loose uw');s.stickOwned=true
-    end
-    if num('Target.Distance')<=num('Target.MaxRangeTo') and now()>=(s.nextAbility or 0) then
-        for _,ability in ipairs({'Flying Kick','Tiger Claw','Round Kick','Kick','Eagle Strike','Dragon Punch'}) do
-            if yes('Me.AbilityReady['..ability..']') then
-                command(r,'/squelch /doability '..ability);s.nextAbility=now()+1000;break
-            end
-        end
+    if s.handoffId~=id or now()>=(s.nextHandoff or 0) then
+        command(r,'/killthis')
+        s.handoffId=id;s.nextHandoff=now()+2000
     end
 end
 
@@ -229,8 +251,20 @@ function M.classaliassetup(r)
     r.aliases.camphere='/togglevariable ReturnToCamp 1'
 end
 function M.bind_togglevariable(r,key,value,...)
-    shared.bind_togglevariable(r,key,value,...)
     local s=state(r);local k=tostring(key):lower()
+    if k=='usemelee' then
+        -- The setting only controls AutoLua's handoff, never MQ2Melee itself.
+        local v=tostring(value or ''):lower()
+        local enabled
+        if v=='1' or v=='on' then enabled=1
+        elseif v=='0' or v=='off' then enabled=0
+        elseif v=='' or v=='null' then enabled=cfg(r,'UseMelee')==1 and 0 or 1
+        else return end
+        r:set({},'UseMelee',enabled);r:set({},'changetoini',1)
+        print('[AutoLua] MQ2Melee handoff: '..(enabled==1 and 'On' or 'Off'))
+        return
+    end
+    shared.bind_togglevariable(r,key,value,...)
     if k=='returntocamp' then
         if cfg(r,'ReturnToCamp')==1 then rememberCamp(r,s)
         else invalidateCamp(r,s,'Camp disabled') end
@@ -251,8 +285,7 @@ end
 function M.bind_pullstatus(r) print('[AutoLua] Monk: '..state(r).status) end
 function M.bind_backoff(r)
     r:set({},'AutoPull',0);r:set({},'UseMelee',0);r:set({},'changetoini',1)
-    local s=state(r);reset(r,s,'Back off: auto pull and melee disabled')
-    command(r,'/squelch /attack off');command(r,'/stick off');command(r,'/target clear')
+    local s=state(r);reset(r,s,'Back off: auto pull and MQ2Melee handoff disabled')
 end
 function M.event_zoned(r,line)
     local s=state(r)
@@ -283,11 +316,14 @@ function M.classmainloop(r)
     end
     local hostile=hostiles()
     local assist=assistTarget()
-    local engaged=#hostile>0 or read('Me.CombatState')=='COMBAT'
+    local meleeActive=yes('Plugin[MQ2Melee].IsLoaded') and yes('Melee.Combat')
+    local engaged=#hostile>0 or read('Me.CombatState')=='COMBAT' or meleeActive
     if not s.camp then
         status(r,s,'Set camp here first')
-        selectFight(r,s,hostile,assist)
         return
+    end
+    if s.phase~='idle' and meleeActive then
+        reset(r,s,'MQ2Melee engaged; waiting for combat to finish');return
     end
     if cfg(r,'AutoPull')~=1 and (s.phase=='outbound' or s.phase=='awaitAggro') then
         returnHome(r,s,'Auto pull disabled')
@@ -330,21 +366,23 @@ function M.classmainloop(r)
         elseif t>=s.deadline or not npc(s.pullId) then reject(r,s,'Pull not confirmed') end
         return
     end
+    local busyMovement=yes('Navigation.Active') or yes('MoveTo.Moving') or yes('Stick.Active') or yes('Me.Combat')
+    if engaged or assist then s.nextPull=t+1500 end
     if campDistance(s)>cfg(r,'AutoCampRadius') then
+        if busyMovement or meleeActive then
+            status(r,s,'Waiting for movement or attack to finish');return
+        end
         returnHome(r,s,'Outside camp radius');return
     end
     if engaged or assist then
-        status(r,s,'Fighting at camp')
-        selectFight(r,s,hostile,assist)
-        s.nextPull=t+1500
+        status(r,s,'Waiting for combat; MQ2Melee handles combat')
+        handoffCombat(r,s,hostile,assist)
         return
     end
-    stopMelee(r,s)
+    s.handoffId=nil
     if cfg(r,'AutoPull')~=1 then status(r,s,'Camp active; auto pull off');return end
     if not yes('Navigation.MeshLoaded') then status(r,s,'Waiting for MQ2Nav zone mesh');return end
-    if yes('Navigation.Active') or yes('MoveTo.Moving') or yes('Stick.Active') or yes('Me.Combat') then
-        status(r,s,'Waiting for manual movement or attack to finish');return
-    end
+    if busyMovement then status(r,s,'Waiting for manual movement or attack to finish');return end
     if t<s.nextPull then return end
     if num('Me.Casting.ID')>0 then return end
     local ready,reason=groupReady(r)
@@ -352,7 +390,7 @@ function M.classmainloop(r)
     local method=pullMethod()
     if not method then status(r,s,'Waiting for Distant Strike or Throw Stone');s.nextPull=t+1000;return end
     local id=selectTarget(r,s,method)
-    if not id then status(r,s,'No eligible reachable NPC in pull radius');s.nextPull=t+1000;return end
+    if not id then status(r,s,s.scanSummary or 'No eligible reachable NPC in pull radius');s.nextPull=t+1000;return end
     s.pullId=id;s.pullName=read(spawn(id)..'.CleanName');s.phase='outbound';s.deadline=t+45000
     status(r,s,'Pulling '..s.pullName..' (ID '..id..')')
 end
