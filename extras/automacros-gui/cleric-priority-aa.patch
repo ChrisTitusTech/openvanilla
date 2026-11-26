@@ -1,0 +1,185 @@
+--- a/tank.lua
++++ b/tank.lua
+@@ -138,6 +138,66 @@
+     end
+     return false
+ end
++local function castBusy(r)
++    local status=read(r,'Cast.Status')
++    return status~='I' and status~='NULL' and status~='',status
++end
++local function priorityAA(r,s,id,name,hp,critical)
++    local hard=num(r,'Me.XTarget')>=3 or read(r,'Me.XTarget[1].Named')=='TRUE' or
++        (r.tankMinimum or 100)<=55
++    local now=mq.gettime()
++    r.tankAANext=r.tankAANext or {}
++    local function ready(key,aa)
++        return now>=(r.tankAANext[key] or 0) and read(r,'Me.AltAbilityReady['..aa..']')=='TRUE'
++    end
++    local function activate(key,aa,target,label)
++        if castBusy(r) then return true end
++        r.tankAANext[key]=now+3000 -- only pace rejected/unconfirmed activations
++        r:log('Priority '..label..' AA tank='..name..' hp='..hp..' ability='..key)
++        r:call('aanow',tostring(aa),target)
++        return true
++    end
++    -- On a hard fight, use instant lifesaving AAs while there is still room
++    -- to survive another hit, rather than waiting for near-death health.
++    if hp<=math.max(hard and 55 or 40,r:get(s,'clickhealpoint') or 35) and
++       (r:get(s,'ClickHealTimer') or 0)==0 and ready('Burst of Life','Burst of Life') then
++        if castBusy(r) then return true end
++        r:set(s,'ClickHealTimer','2s')
++        return activate('Burst of Life',7689,id,'emergency')
++    end
++    if hp>75 and not hard then return false end
++    local selfHp=num(r,'Me.PctHPs')
++    local hurt,healthy,otherCritical=0,0,false
++    local function sample(memberId,memberHp)
++        if memberId~=id and memberId>0 and memberHp>0 then
++            if memberHp<=75 then hurt=hurt+1 end
++            if memberHp>=hp+25 then healthy=healthy+1 end
++            if memberHp<=35 then otherCritical=true end
++        end
++    end
++    sample(num(r,'Me.ID'),selfHp)
++    for i=1,math.min(5,num(r,'Group.Members')) do
++        local m='Group.Member['..i..']'
++        sample(num(r,m..'.ID'),num(r,m..'.PctHPs'))
++    end
++    if hp<=35 and healthy>=2 and not otherCritical and (r:get(s,'ClickHealTimer') or 0)==0 and
++       ready('Divine Arbitration','Divine Arbitration') then
++        if castBusy(r) then return true end
++        r:set(s,'ClickHealTimer','2s')
++        return activate('Divine Arbitration',169,num(r,'Me.ID'),'emergency')
++    end
++    if hp<=75 and hurt>=1 and ready('Beacon of Life',137) then
++        return activate('Beacon of Life',137,num(r,'Me.ID'),'group heal')
++    end
++    -- Protective/regen AAs must get a turn before a hard fight's tank is
++    -- critical. Do not spend that time on cooldowns when a direct heal is urgent.
++    if hard and hp>critical and not otherCritical then
++        for _,aa in ipairs({{'Divine Guardian',463},{'Focused Celestial Regeneration',1065}}) do
++            if ready(aa[1],aa[2]) then return activate(aa[1],aa[2],id,'preventive') end
++        end
++    end
++    return false
++end
+ function M.priorityHeal(r,s)
+     local id=tonumber(r:get(s,'tankid')) or 0
+     local name=r:get(s,'tankname')
+@@ -160,8 +220,10 @@
+     else r:logAction('tank-sample',sample) end
+     local threshold=r:get(s,'healpoint') or 80
+     local critical=math.min(threshold,math.max(70,(r:get(s,'bighealpoint') or 60)+10))
+-    if hp>threshold or num(r,'Me.Casting.ID')>0 or read(r,base..'.Hovering')=='TRUE' or
++    if num(r,'Me.Casting.ID')>0 or read(r,base..'.Hovering')=='TRUE' or
+        read(r,base..'.Type')=='Corpse' or num(r,base..'.Distance')>(r:get(s,'healspellrange') or 200) then return false end
++    if priorityAA(r,s,id,name,hp,critical) then return true end
++    if hp>threshold then return false end
+     -- Prevent moderate tank damage from starving a critically injured group member.
+     if hp>critical then
+         local selfHp=num(r,'Me.PctHPs')
+@@ -172,13 +234,6 @@
+             if num(r,member..'.ID')~=id and memberHp>0 and memberHp<=critical then return false end
+         end
+     end
+-    if hp<=math.max(40,r:get(s,'clickhealpoint') or 35) and (r:get(s,'ClickHealTimer') or 0)==0 and
+-       read(r,'Me.AltAbilityReady[Burst of Life]')=='TRUE' then
+-        r:set(s,'ClickHealTimer','2s')
+-        r:log('Priority emergency AA tank='..name..' hp='..hp..' ability=Burst of Life')
+-        r:call('aanow','7689',id)
+-        return true
+-    end
+     local order={}
+     if hp<=math.max(40,r:get(s,'patchheal2point') or 34) then order[#order+1]='patchheal2' end
+     if hp<=(r:get(s,'patchhealpoint') or 44) then order[#order+1]='patchheal' end
+@@ -193,9 +248,16 @@
+         if spell and spell~='NULL' and spell~='Complete Heal' and
+            num(r,'Me.Gem['..spell..']')>0 and read(r,'Me.SpellReady['..spell..']')=='TRUE' and
+            num(r,'Me.CurrentMana')>=num(r,'Spell['..spell..'].Mana') then
++            local busy,castStatus=castBusy(r)
++            -- An AA may leave MQ2Cast busy even when the spell gem is ready.
++            -- Do not fall through to optional actions while a priority heal is pending.
++            if busy then
++                r:logAction('priority-cast-busy','Priority tank heal waiting for MQ2Cast status='..castStatus)
++                return true
++            end
+             r:log('Priority tank heal tank='..name..' hp='..hp..' spell='..spell)
+             local result=r:call('spellqueue',spell,id)
+-            if result=='CAST_SUCCESS' then return true end
++            if result=='CAST_SUCCESS' or result=='CAST_DISTRACTED' then return true end
+             break
+         end
+     end
+--- a/tests/test.lua
++++ b/tests/test.lua
+@@ -312,6 +312,16 @@
+ eq(chosen[1],'Spiritual Remedy Rk. II','critical spell')
+ eq(chosen[2],123,'critical tank ID')
+ eq(policy.tankMinimum,52,'tracked minimum HP')
++mock.values['Cast.Status']='C'
++chosen=nil
++policy:call('classmainloop')
++eq(chosen,nil,'busy MQ2Cast yields without optional actions or another cast')
++mock.values['Cast.Status']='I'
++local successfulQueue=policy.funcs.spellqueue
++policy.funcs.spellqueue=function(_,spell,id) chosen={spell,id};return 'CAST_DISTRACTED' end
++policy:call('classmainloop')
++eq(chosen[2],123,'distracted priority cast does not fall through to optional actions')
++policy.funcs.spellqueue=successfulQueue
+ mock.values['Me.XTarget[1].ID']='0'
+ Tank.priorityHeal(policy,{})
+ assert(policy.messages[#policy.messages]:find('minimum_sampled_hp=52',1,true))
+@@ -641,6 +651,7 @@
+
+ -- Direct tank HP is conservative and drives an earlier heal when the local
+ -- spawn cache is lagging, but a stale reading cannot force a heal.
++mock.values['Cast.Status']='I'
+ policy.observations=nil
+ mock.values['Me.XTarget[1].ID']='99'
+ mock.values['Spawn[id 123].PctHPs']='90'
+@@ -816,6 +827,44 @@
+ eq(Tank.monitorWait(policy,true),false,'nearly completed tank heal protected')
+ print('PASS 40% emergency response and near-death preemption safeguards')
+
++-- Defensive AAs during hard encounters, before critical damage, and instant
++-- tank/group healing and equalization when direct heals would be too slow.
++policy.tankAANext={};policy.tankMinimum=nil
++policy:set({},'ClickHealTimer',0)
++mock.values['Cast.Status']='I'
++mock.values['Me.XTarget[1].Named']='TRUE'
++mock.values['Spawn[id 123].PctHPs']='95'
++mock.values['Me.ID']='101';mock.values['Me.PctHPs']='100'
++mock.values['Group.Member[1].ID']='111';mock.values['Group.Member[1].PctHPs']='100'
++mock.values['Group.Member[2].ID']='123';mock.values['Group.Member[2].PctHPs']='95'
++mock.values['Group.Member[3].ID']='124';mock.values['Group.Member[3].PctHPs']='100'
++mock.values['Me.AltAbilityReady[463]']='TRUE'
++mock.values['Me.AltAbilityReady[1065]']='TRUE'
++aa=nil
++eq(Tank.priorityHeal(policy,{}),true,'preventive guardian before tank is hurt')
++eq(aa[1],'463','Divine Guardian priority')
++eq(aa[2],123,'guardian applied to tank')
++eq(Tank.priorityHeal(policy,{}),true,'guardian retry paced, regen next')
++eq(aa[1],'1065','Focused Celestial Regeneration priority')
++mock.values['Spawn[id 123].PctHPs']='52'
++eq(Tank.priorityHeal(policy,{}),true,'hard fight burst before critical HP')
++eq(aa[1],'7689','early Burst of Life')
++mock.values['Me.AltAbilityReady[Burst of Life]']='FALSE'
++mock.values['Me.AltAbilityReady[Divine Arbitration]']='TRUE'
++policy:set({},'ClickHealTimer',0)
++mock.values['Spawn[id 123].PctHPs']='30'
++eq(Tank.priorityHeal(policy,{}),true,'arbitration when healthy allies can support tank')
++eq(aa[1],'169','Divine Arbitration')
++mock.values['Me.AltAbilityReady[Divine Arbitration]']='FALSE'
++mock.values['Me.AltAbilityReady[137]']='TRUE'
++mock.values['Group.Member[1].PctHPs']='60'
++mock.values['Spawn[id 123].PctHPs']='65'
++eq(Tank.priorityHeal(policy,{}),true,'group instant heal before slower spell')
++eq(aa[1],'137','Beacon of Life')
++for _,k in ipairs({'463','1065','137'}) do mock.values['Me.AltAbilityReady['..k..']']='FALSE' end
++mock.values['Me.XTarget[1].Named']='FALSE'
++print('PASS preventive cleric AAs, early Burst, Arbitration and Beacon priority')
++
+ -- Deadline-based bard scheduling selects endangered core buffs before
+ -- an expired secondary buff and only clicks an item with adequate slack.
+ mock.values['Me.XTarget[1].ID']='0'

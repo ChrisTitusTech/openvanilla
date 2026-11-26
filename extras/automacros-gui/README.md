@@ -117,6 +117,24 @@ patch -p1 < "$overlay/bard-recovered-stand.patch"
 
 Run the offline tests and restart the bard while the group is idle.
 
+## Cleric defensive AA priority
+
+`cleric-priority-aa.patch` makes Divine Guardian and Focused Celestial
+Regeneration proactive during named, multi-mob or high-damage encounters.
+Burst of Life is prioritized at 55% tank HP in those encounters, Divine
+Arbitration is considered only when healthy allies can support a critical
+tank, and Beacon of Life is prioritized for multiple injured members.
+An already-busy MQ2Cast is allowed to finish instead of falling through to
+optional actions after a distracted priority heal.
+
+From the installed `lua/automacros` directory, apply this patch once, run
+the offline suite and restart the cleric while the group is idle.
+
+```bash
+patch --dry-run -p1 < "$overlay/cleric-priority-aa.patch"
+patch -p1 < "$overlay/cleric-priority-aa.patch"
+```
+
 ## Monk AutoLua
 
 The new native Lua class module is selected automatically on a monk by
