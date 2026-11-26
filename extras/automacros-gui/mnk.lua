@@ -123,6 +123,9 @@ local function rememberCamp(r,s)
     status(r,s,string.format('Camp set at %.1f, %.1f, %.1f',p.y,p.x,p.z))
 end
 local function campDistance(s) return distance(position('Me'),s.camp) end
+-- NPCs can stop a few units beyond the camp boundary when the tank catches
+-- them. A small combat-only margin avoids leaving the tank fighting alone.
+local function combatCampRadius(r) return cfg(r,'AutoCampRadius')+20 end
 local function campCommand(s)
     return string.format('loc %.3f %.3f %.3f',s.camp.y,s.camp.x,s.camp.z)
 end
@@ -710,12 +713,12 @@ local function abilityTick(r,s,mode,hostile)
         local inCamp,includesTarget=0,false
         for _,id in ipairs(hostile) do
             if id==s.combatId then includesTarget=true end
-            if distance(position(spawn(id)),s.camp)<=cfg(r,'AutoCampRadius') then
+            if distance(position(spawn(id)),s.camp)<=combatCampRadius(r) then
                 inCamp=inCamp+1
             end
         end
         -- A group-assist target may be engaged before it appears on our XTarget.
-        if not includesTarget and distance(position(e),s.camp)<=cfg(r,'AutoCampRadius') then
+        if not includesTarget and distance(position(e),s.camp)<=combatCampRadius(r) then
             inCamp=inCamp+1
         end
         burn=inCamp>=3
@@ -751,7 +754,7 @@ local function engageCombat(r,s,hostile,assist)
         local threshold=cfg(r,'AutoAssistAt')
         return read(e..'.CanEngage')~='FALSE' and yes(e..'.LineOfSight') and
             ((hp>0 and hp<=threshold) or (hp==0 and threshold==100)) and
-            distance(position(e),s.camp)<=cfg(r,'AutoCampRadius')
+            distance(position(e),s.camp)<=combatCampRadius(r)
     end
     local id=s.combatId or (valid(assist) and assist or nil)
     local lowest=101
@@ -973,7 +976,7 @@ function M.classmainloop(r)
         local tank=groupTank()
         local threatInCamp=false
         for id,pct in pairs(hate.byId) do
-            if pct>=100 and (id==s.combatId or distance(position(spawn(id)),s.camp)<=cfg(r,'AutoCampRadius')) then
+            if pct>=100 and (id==s.combatId or distance(position(spawn(id)),s.camp)<=combatCampRadius(r)) then
                 threatInCamp=true;break
             end
         end

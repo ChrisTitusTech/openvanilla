@@ -1,0 +1,212 @@
+--- a/bard.lua
++++ b/bard.lua
+@@ -92,6 +92,87 @@
+     end
+     return num(r,'Me.PctHPs')<85 or num(r,'Me.PctEndurance')<80
+ end
++local function encounter(r)
++    local count=num(r,'Me.XTarget')
++    if count<=0 then return 0,false,{} end
++    local slots=math.min(40,math.max(1,count,num(r,'Me.XTargetSlots')))
++    local seen,n,named,occupied={},0,false,0
++    local radius=(r:get({},'AutoCampRadius') or 60)+20
++    for i=1,slots do
++        local id=num(r,'Me.XTarget['..i..'].ID')
++        if id>0 then occupied=occupied+1 end
++        local e='Spawn[id '..id..']'
++        if id>0 and not seen[id] and read(r,e..'.Type')=='NPC' and
++            read(r,e..'.Dead')~='TRUE' and num(r,e..'.Distance')<=radius then
++            seen[id]=true;n=n+1
++            if read(r,e..'.Named')=='TRUE' then named=true end
++        end
++        if occupied>=count then break end
++    end
++    return n,named,seen
++end
++local function releaseSong(r)
++    if num(r,'Me.Casting.ID')>0 then
++        r:command({},'/stopcast');mq.delay(500,function() return num(r,'Me.Casting.ID')==0 end)
++    end
++    return num(r,'Me.Casting.ID')==0
++end
++local function aa(r,name,id,target,slack,reason)
++    local now=mq.gettime()
++    r.bardAANext=r.bardAANext or {}
++    if now<(r.bardAANext[name] or 0) or
++        (read(r,'Me.AltAbilityReady['..name..']')~='TRUE' and read(r,'Me.AltAbilityReady['..id..']')~='TRUE') then return false end
++    local cast=num(r,'Me.AltAbility['..id..'].Spell.MyCastTime.Raw')
++    if slack<cast+1500 then return false end
++    r.bardAANext[name]=now+3000
++    -- castready has expired; stop only the held/repeating song before an AA.
++    if not releaseSong(r) then return false end
++    r:log('Bard AA request='..name..' reason='..reason..' target='..tostring(target or 0))
++    r:call('aanow',tostring(id),target or 0)
++    return true
++end
++function M.defense(r)
++    if (r:get({},'castready') or 0)>0 or read(r,'Me.Invis')=='TRUE' or
++        read(r,'Me.Stunned')=='TRUE' or read(r,'Me.State')=='STUN' or read(r,'Me.State')=='FEIGN' then return false end
++    local hp=num(r,'Me.PctHPs')
++    if num(r,'Me.XTarget[1].ID')>0 and hp>0 and hp<=70 then
++        return aa(r,'Shield of Notes',361,nil,math.huge,'low-health-defense')
++    end
++    return false
++end
++local function burn(r,slack)
++    local n,named,seen=encounter(r)
++    if not named and n<3 then return false end
++    local reason=named and 'named' or 'three-plus-mobs'
++    local id=num(r,'Target.ID')
++    local target=seen[id] and id or nil
++    -- Group support first increases damage and healing before the encounter
++    -- gets dangerous. Targeted damage AAs require an actual encounter NPC.
++    for _,a in ipairs({{'Fierce Eye',3506},{'Quick Time',3702},{'Dance of Blades',359},
++        {'Funeral Dirge',777,true},{'Bladed Song',669,true},{'Song of Stone',544,true}}) do
++        if (not a[3] or target) and aa(r,a[1],a[2],a[3] and target or nil,slack,reason) then return true end
++    end
++    -- Preserve the existing epic and discipline, one action per safe slot.
++    local epic=r:get({},'epicsword')
++    local now=mq.gettime()
++    r.bardAANext=r.bardAANext or {}
++    if epic and epic~='NULL' and num(r,'FindItem['..epic..'].ID')>0 and
++        read(r,'Me.ItemReady['..epic..']')=='TRUE' and
++        now>=(r.bardAANext[epic] or 0) and slack>num(r,'FindItem['..epic..'].CastTime.Raw')+1500 then
++        r.bardAANext[epic]=now+3000
++        if not releaseSong(r) then return false end
++        r:log('Bard burn item='..epic..' reason='..reason)
++        r:call('itemnow',epic);return true
++    end
++    if target and num(r,'Me.PctEndurance')>20 and read(r,'Me.CombatAbilityReady[Thousand Blades]')=='TRUE' and
++        now>=(r.bardAANext['Thousand Blades'] or 0) and slack>1500 then
++        r.bardAANext['Thousand Blades']=now+3000
++        if not releaseSong(r) then return false end
++        r:log('Bard burn discipline=Thousand Blades reason='..reason)
++        r:call('discnow','Thousand Blades');return true
++    end
++    return false
++end
+ -- Essential group buffs get the first available cast before expiry. The
+ -- remaining-time deadline includes the *next* song's cast budget, not only
+ -- the current song, so a later slot cannot hide an earlier deadline.
+@@ -113,6 +194,7 @@
+         return false
+     end
+     if downtime and read(r,'Me.Standing')~='TRUE' then return false end
++    if not downtime and M.defense(r) then return true end
+     r.songAttempts=r.songAttempts or {}
+     local slow=r:get({},'slowsong')
+     local targetId=num(r,'Target.ID')
+@@ -168,6 +250,7 @@
+         end
+         return false
+     end
++    if burn(r,coreSlack) then return true end
+     local burst=r:get({},'bmsong')
+     if known(r,burst) and (r:get({},'bmsongtimer') or 0)==0 and coreSlack>castTime(r,burst)+750 then
+         queue(r,burst,'periodic-group-burst',0)
+--- a/brd.lua
++++ b/brd.lua
+@@ -46,6 +46,7 @@
+
+ function M.classmainloop(r, ...)
+     local s = r:frame({}, ...)
++    if Bard.defense(r) then return end
+     -- Refresh the instant speed AA in both combat and downtime.
+     -- Give it a pulse before scheduling another song.
+     if Bard.selo(r) then return end
+@@ -63,9 +64,6 @@
+     end
+     if r:condition(s, [=[${Me.XTarget[1].ID} && ${castready}==0]=]) then
+         r:invoke(s, [=[combatsongs]=], [=[]=])
+-    end
+-    if r:condition(s, [=[${Me.XTarget[1].ID} && (${Me.XTarget}>3 || ${Target.Named}) && ${Target.ID}==${autotargetid}]=]) then
+-        r:invoke(s, [=[bardburn]=], [=[]=])
+     end
+     r:invoke(s, [=[sitcheck]=], [=[]=])
+     do return nil end
+@@ -122,34 +120,6 @@
+     r:command(s, [=[/noparse /alias /byos /multiline ; /varset changetoini 1 ; /docommand ${If[${BringYourOwnSpells}==1,/varset BringYourOwnSpells 0,/varset BringYourOwnSpells 1]} ; /echo Toggling Bring Your Own Spells to ${If[${BringYourOwnSpells}==0,OFF,ON]}]=])
+     do return nil end
+     -- ----------------------------------------------------------------------------
+-    -- SUB: BardBurn
+-    -- ----------------------------------------------------------------------------
+-end
+-
+-function M.bardburn(r, ...)
+-    local s = r:frame({}, ...)
+-    if r:condition(s, [=[${FindItem[${epicsword}].ID} && ${Me.ItemReady[${epicsword}]}]=]) then
+-        r:invoke(s, [=[itemnow]=], [=["${epicsword}"]=])
+-    end
+-    if r:condition(s, [=[${Me.AltAbilityReady[Quick Time]}]=]) then
+-        r:invoke(s, [=[aanow]=], [=[3702]=])
+-    end
+-    -- --Third Spire
+-    if r:condition(s, [=[${Me.AltAbilityReady[1422]}]=]) then
+-        r:invoke(s, [=[aanow]=], [=[1422]=])
+-    end
+-    if r:condition(s, [=[${Me.AltAbilityReady[Funeral Dirge]}]=]) then
+-        r:invoke(s, [=[aanow]=], [=[777]=])
+-    end
+-    -- /if (${Me.AltAbilityReady[Bladed Song]}) /call AANow 669
+-    if r:condition(s, [=[${Me.AltAbilityReady[Dance of Blades]}]=]) then
+-        r:invoke(s, [=[aanow]=], [=[359]=])
+-    end
+-    if r:condition(s, [=[${Me.CombatAbilityReady[Thousand Blades]}]=]) then
+-        r:invoke(s, [=[discnow]=], [=["Thousand Blades"]=])
+-    end
+-    do return nil end
+-    -- ----------------------------------------------------------------------------
+     -- SUB: AESongs
+     -- ----------------------------------------------------------------------------
+ end
+--- a/tests/test.lua
++++ b/tests/test.lua
+@@ -1027,6 +1027,48 @@
+ eq(selected,'Test Slow','new target slow')
+ print('PASS target-specific slow pacing')
+
++-- Learned bard AAs are scheduled between songs, with a defensive response
++-- even on ordinary fights and offensive burns only for named/3+ nearby NPCs.
++rotation:set({},'UseSlow',0);rotation:set({},'darksword','NULL')
++rotation.songAttempts={};rotation.bardAANext={}
++for _,name in pairs(names) do mock.values['Me.BuffDuration['..name..'].Raw']='15000' end
++mock.values['Me.Casting.ID']='0';mock.values['Me.PctHPs']='100'
++mock.values['Me.XTargetSlots']='13';mock.values['Me.XTarget']='2'
++for _,slot in ipairs({1,5,9}) do
++    local id=2000+slot;local e='Spawn[id '..id..']'
++    mock.values['Me.XTarget['..slot..'].ID']=tostring(id)
++    mock.values[e..'.Type']='NPC';mock.values[e..'.Distance']='25';mock.values[e..'.Named']='FALSE'
++end
++mock.values['Me.XTarget[9].ID']='0'
++mock.values['Target.ID']='2001'
++mock.values['Me.AltAbilityReady[Fierce Eye]']='TRUE'
++mock.values['Me.AltAbilityReady[Quick Time]']='TRUE'
++mock.values['Me.AltAbilityReady[Shield of Notes]']='TRUE'
++local bardAA
++rotation.funcs.aanow=function(_,id,target) bardAA={id,target} end
++eq(Bard.scheduleCombat(rotation),false,'do not burn on two ordinary NPCs')
++mock.values['Me.XTarget[9].ID']='2009';mock.values['Me.XTarget']='3'
++mock.values['Spawn[id 2009].Distance']='150'
++eq(Bard.scheduleCombat(rotation),false,'a distant third NPC does not trigger burn')
++mock.values['Spawn[id 2009].Distance']='25'
++mock.values['Me.BuffDuration[Aria].Raw']='1000'
++eq(Bard.scheduleCombat(rotation),true,'urgent core buff before offensive burns')
++eq(selected,'Aria','core protected before burn')
++mock.values['Me.BuffDuration[Aria].Raw']='15000'
++eq(Bard.scheduleCombat(rotation),true,'exactly three nearby NPCs trigger burn')
++eq(bardAA[1],'3506','Fierce Eye group support first')
++eq(Bard.scheduleCombat(rotation),true,'one AA per safe song slot')
++eq(bardAA[1],'3702','Quick Time after Fierce Eye')
++rotation.bardAANext={}
++mock.values['Me.XTarget']='1';mock.values['Me.XTarget[5].ID']='0';mock.values['Me.XTarget[9].ID']='0'
++mock.values['Spawn[id 2001].Named']='TRUE'
++eq(Bard.scheduleCombat(rotation),true,'single named NPC triggers burn')
++eq(bardAA[1],'3506','named Fierce Eye')
++mock.values['Spawn[id 2001].Named']='FALSE';mock.values['Me.PctHPs']='65'
++eq(Bard.scheduleCombat(rotation),true,'defensive AA on low health ordinary encounter')
++eq(bardAA[1],'361','Shield of Notes')
++print('PASS bard AA named/three-plus gates, core deadlines and low-health defense')
++
+ require('automacros.tests.test_gui')(setup,mock,eq)
+
+ require('automacros.tests.test_monk')(setup,mock,eq)

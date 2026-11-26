@@ -103,6 +103,11 @@ group health, mana or endurance deficits, after protecting the core
 song deadlines. Non-mana classes do not count as mana deficits.
 `bard-recovered-stand.patch` makes a fully recovered bard stand and
 resume core songs without waiting for a new encounter.
+`bard-combat-aa.patch` prioritizes Shield of Notes at 70% bard HP,
+and schedules Fierce Eye, Quick Time, Dance of Blades, Funeral Dirge,
+Bladed Song, Song of Stone, the epic and Thousand Blades on named or
+three-plus nearby hostile NPCs. Only one burn action is attempted per
+safe inter-song slot so core song deadlines remain protected.
 
 From the installed `lua/automacros` directory, apply the patch once:
 
@@ -113,6 +118,8 @@ patch --dry-run -p1 < "$overlay/bard-recovery.patch"
 patch -p1 < "$overlay/bard-recovery.patch"
 patch --dry-run -p1 < "$overlay/bard-recovered-stand.patch"
 patch -p1 < "$overlay/bard-recovered-stand.patch"
+patch --dry-run -p1 < "$overlay/bard-combat-aa.patch"
+patch -p1 < "$overlay/bard-combat-aa.patch"
 ```
 
 Run the offline tests and restart the bard while the group is idle.
@@ -214,7 +221,9 @@ combat buff AAs and disciplines, Mend, Purify Body when needed,
 endurance recovery and the monk aura. Defensive discs are prioritized
 when health is low. Major damage discs and burn AAs are used against
 named targets or when at least three live encounter NPCs are inside
-the configured camp radius. Ordinary fights, elapsed fight time and
+the configured camp radius plus a 20-unit combat margin. The margin
+lets the monk assist the tank when NPCs stop just outside camp but does
+not change pull or return-to-camp distances. Ordinary fights, elapsed fight time and
 extended targets outside camp do not trigger burns.
 Long-duration active discs are not overwritten. Offensive abilities require a
 valid target and range; readiness, health and endurance reserves are checked. Requests are
