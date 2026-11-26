@@ -89,7 +89,7 @@
 --- a/brd.lua
 +++ b/brd.lua
 @@ -46,6 +46,9 @@
- 
+
  function M.classmainloop(r, ...)
      local s = r:frame({}, ...)
 +    -- Refresh the instant speed AA in both combat and downtime.
@@ -194,6 +194,6 @@
 +eq(mock.commands[beforeSongCount+3],'/cast 4','resume scheduled song')
 +mock.values=savedSeloValues
 +print('PASS Selo rank fallback, early buff loss, combat refresh and song safety')
- 
+
  -- Monitor emergency tank HP while a non-tank cast is in progress.
  mock.values['Me.XTarget[1].ID']='99'
