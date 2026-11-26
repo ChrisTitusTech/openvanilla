@@ -1,0 +1,87 @@
+| Drag.mac - by Noobhaxor, updated for current MacroQuest.
+| Pull player corpses initially within 100 units as you move.
+| Stop with /endmacro. Consent and normal server restrictions still apply.
+
+#event Denied "#*#You do not have consent#*#"
+
+Sub Main
+    /declare corpseCount int local ${SpawnCount[pccorpse radius 100]}
+    /declare corpseIndex int local 0
+    /declare remaining int local 0
+    /declare requestId int outer 0
+    /declare denied int outer 0
+
+    /if (${corpseCount}<=0) {
+        /echo Drag: No player corpses within 100 units.
+        /endmacro
+    }
+
+    | Snapshot IDs before dragging changes their nearest-spawn order.
+    /declare dragIds[${corpseCount}] int outer 0
+    /for corpseIndex 1 to ${corpseCount}
+        /if (${NearestSpawn[${corpseIndex},pccorpse radius 100].ID}) /varset dragIds[${corpseIndex}] ${NearestSpawn[${corpseIndex},pccorpse radius 100].ID}
+    /next corpseIndex
+    /echo Drag: Tracking ${corpseCount} player corpses. Move to pull them within 25 units; /endmacro to stop.
+
+    :mainloop
+    /varset remaining 0
+    /for corpseIndex 1 to ${corpseCount}
+        /if (${dragIds[${corpseIndex}]}>0) {
+            /call DragOne ${corpseIndex}
+            /if (${dragIds[${corpseIndex}]}>0) /varcalc remaining ${remaining}+1
+        }
+    /next corpseIndex
+    /if (${remaining}==0) {
+        /echo Drag: No remaining tracked corpses in range.
+        /endmacro
+    }
+    /delay 5
+    /goto :mainloop
+/return
+
+Sub DragOne(int slot)
+    /declare corpseId int local ${dragIds[${slot}]}
+    /declare attempt int local 0
+
+    /if (!${Spawn[id ${corpseId} pccorpse].ID} || ${Spawn[id ${corpseId}].Distance}>100) {
+        /varset dragIds[${slot}] 0
+        /return
+    }
+    /if (${Spawn[id ${corpseId}].Distance}<=25) /return
+
+    /for attempt 1 to 3
+        | Process late consent messages before starting the next request.
+        /doevents Denied
+        /varset denied 0
+        /if (!${Spawn[id ${corpseId} pccorpse radius 100].ID}) {
+            /varset dragIds[${slot}] 0
+            /return
+        }
+        /target id ${corpseId}
+        /delay 5 ${Target.ID}==${corpseId}
+        /if (${Target.ID}==${corpseId} && ${Spawn[id ${corpseId} pccorpse radius 100].ID}) {
+            /varset requestId ${corpseId}
+            /corpse
+            /delay 1s !${Spawn[id ${corpseId}].ID} || ${Spawn[id ${corpseId}].Distance}<=25
+            /doevents Denied
+            /varset requestId 0
+            /if (!${Spawn[id ${corpseId}].ID}) {
+                /varset dragIds[${slot}] 0
+                /return
+            }
+            /if (${Spawn[id ${corpseId}].Distance}<=25) /return
+            /if (${denied}) {
+                /echo Drag: No consent for ${Spawn[id ${corpseId}].CleanName} (ID ${corpseId}); skipping.
+                /varset dragIds[${slot}] 0
+                /return
+            }
+        }
+        /delay 5
+    /next attempt
+    /echo Drag: Could not pull corpse ID ${corpseId} after 3 attempts; skipping.
+    /varset dragIds[${slot}] 0
+/return
+
+Sub Event_Denied
+    /if (${requestId}>0) /varset denied 1
+/return
