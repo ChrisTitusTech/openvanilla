@@ -4,6 +4,10 @@ Files in this directory exist only in the `ChrisTitusTech/openvanilla` fork.
 They support building MacroQuest on Linux for EverQuest Live running under
 Wine. See `SPEC.md` at the repository root for the full plan.
 
+For a complete new-machine installation, start with the
+[main README](../../README.md). This document covers the build implementation
+and maintenance details.
+
 ## Filename case
 
 Windows ignores letter case in file names. The Linux build (`clang-cl` and
@@ -130,6 +134,9 @@ twice. It fails if the two runs differ, or if any committed
 Prerequisites: LLVM (`clang-cl`, `lld-link`, `llvm-rc`, `llvm-lib`,
 `llvm-mt`), `nasm`, `ninja`, `cmake`, `pwsh`, `iconv`, and an xwin splat
 (CRT 14.44, SDK 10.0.26100) at `~/.local/share/xwin` or `$XWIN_ROOT`.
+The splat must contain the space-free `winsdk` symlink to `Windows Kits/10`;
+the [SDK installation steps](../../README.md#install-xwin-and-download-the-windows-sdk)
+include the exact pinned command and symlink.
 
 ```sh
 git submodule update --init src/eqlib contrib/vcpkg
