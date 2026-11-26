@@ -19,11 +19,48 @@
  if not ok then
 --- a/runtime.lua
 +++ b/runtime.lua
-@@ -305,11 +305,13 @@
+@@ -234,8 +234,18 @@
+     elseif expr=='' then mq.delay(ms)
+     else mq.delay(ms,function() return self:condition(s,expr) end) end
+ end
++local startupPhases={
++    varsetup='Loading shared settings and plugins',
++    classvarsetup='Loading class settings',
++    setupspells='Preparing spells and abilities',
++    zoning='Waiting for zone to settle',
++}
++
+ function R:call(name,...)
+-    local f=assert(self.funcs[name:lower()],'Missing routine '..name)
++    local key=name:lower()
++    local f=assert(self.funcs[key],'Missing routine '..name)
++    local startup=self.gui and not self.gui.ready and startupPhases[key]
++    if startup then self.gui:setPhase(startup) end
+     local cast=name:lower()=='autocastmemorized'
+     local discipline=name:lower()=='discqueue' or name:lower()=='discnow'
+     local target,hp
+@@ -245,6 +255,12 @@
+         self.activeCast={spell=tostring((...)),targetId=tonumber(mq.parse('${Target.ID}')) or 0}
+     end
+     local result=f(self,...)
++    if startup and key=='classvarsetup' then
++        self.gui.loaded=true
++        self.gui:setPhase('Settings loaded; preparing controls')
++    elseif startup and key=='setupspells' then
++        self.gui:setPhase('Spell and ability setup complete')
++    end
+     if cast then
+         local spell=tostring((...))
+         local after=self:expand({},'${Target.PctHPs}')
+@@ -305,11 +321,17 @@
      self.queue[#self.queue+1]={name=name,args={...}}
  end
  function R:pump()
-+    if self.gui then self.gui.ready=true end
++    if self.gui and not self.gui.ready then
++        self.gui.loaded=true
++        self.gui.ready=true
++        self.gui:setPhase('Ready')
++    end
      mq.doevents()
      local pending=self.queue
      self.queue={}
@@ -33,7 +70,7 @@
          else self:call(job.name,unpack(job.args)) end
      end
      local now=mq.gettime()
-@@ -324,13 +326,18 @@
+@@ -324,13 +346,18 @@
  function R:dispatch(name,...)
      name=(name or 'help'):lower():gsub('^/','')
      local rest=table.concat({...},' ')
@@ -53,6 +90,19 @@
          for n in pairs(self.aliases) do names[#names+1]=n end
          for n in pairs(self.binds) do names[#names+1]=n end
          table.sort(names);print('[AutoLua] /autolua '..table.concat(names,', '));return
+--- a/shared.lua
++++ b/shared.lua
+@@ -280,7 +280,9 @@
+ function M.zoning(r, ...)
+     local s = r:frame({}, ...)
+     r:delay(s, [=[1m]=], [=[!${Me.Zoning}]=])
+-    if r:condition(s, [=[${Bool[${FollowToonName}]}]=]) then
++    -- The legacy default is a placeholder, not a character name.
++    local follow=(r:get(s,'FollowToonName') or ''):lower()
++    if follow~='' and follow~='null' and follow~='nullnullnullnullnull' then
+         r:delay(s, [=[1m]=], [=[${Spawn[${FollowToonName}].ID}]=])
+     end
+     r:delay(s, [=[50]=], [=[]=])
 --- a/tests/test.lua
 +++ b/tests/test.lua
 @@ -821,3 +821,5 @@

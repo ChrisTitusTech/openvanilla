@@ -8,7 +8,9 @@ underlying AutoLua scripts.
 
 Start AutoLua normally with `/lua run automacros`. The configuration
 window opens automatically. Close or hide it without stopping the script;
-`/autolua gui` opens it again.
+`/autolua gui` opens it again. During startup, the window shows the
+current startup phase and elapsed time. Settings become visible as soon as
+they are loaded and unlock once the runtime can process changes.
 
 - All classes: melee, return to camp, camp radius, assist HP, follow,
   fellowship, instant release, verbose notifications and backoff.
@@ -52,7 +54,10 @@ cd "$lua_dir"
 luajit automacros/tests/test.lua
 ```
 
-Apply the integration patch once; for an already patched installation,
-copy the updated GUI and test modules instead. The tests use mocked MQ
-data and do not operate on the game or real INIs. Live rendering and
-in-game interaction are still to be verified.
+Apply the integration patch to unmodified AutoLua 1.5 sources. For an
+installation with the earlier GUI overlay, reverse the earlier integration
+patch first (available at commit `5520e30c`), then apply the updated patch.
+The updated patch also fixes the unnecessary zone-settle wait when the
+configured follow target is the legacy placeholder. The tests use mocked
+MQ data and do not operate on the game or real INIs. Actual startup timing
+depends on the client and spell setup.

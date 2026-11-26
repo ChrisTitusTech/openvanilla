@@ -6,8 +6,50 @@ return function(setup,mock,eq)
         local r=setup(class)
         local gui=G.new(r,class)
         r.gui=gui
+        local originalClassSetup=r.funcs.classvarsetup
+        r.funcs.classvarsetup=function()
+            eq(gui.phase,'Loading class settings','startup phase during setup')
+            eq(gui.loaded,false,'settings not loaded yet')
+        end
+        r:call('classvarsetup')
+        r.funcs.classvarsetup=originalClassSetup
+        eq(gui.loaded,true,'settings shown before spell setup completes')
+        eq(gui.ready,false,'controls still locked')
+        local disabled,finished=0,0
+        local noop=function() end
+        _G.ImGuiCond={FirstUseEver=1}
+        gui:draw({
+            SetNextWindowSize=noop, Begin=function() return true,true end,
+            End=noop, Text=noop, TextWrapped=noop, Separator=noop,
+            SameLine=noop, PushID=noop, PopID=noop, SetNextItemWidth=noop,
+            SliderInt=function(_,v) return v,false end,
+            InputText=function(_,v) return v,false end,
+            Button=function() return false end,
+            Checkbox=function(_,v) return v,false end,
+            BeginDisabled=function() disabled=disabled+1 end,
+            EndDisabled=function() finished=finished+1 end,
+        })
+        eq(disabled,1,'loaded settings visible but disabled during startup')
+        eq(finished,1,'disabled scope balanced')
+        mock.values['Me.Zoning']='FALSE'
+        local before=mock.time
+        r:set({},'FollowToonName','NULLNULLNULLNULLNULL')
+        r:call('zoning')
+        eq(mock.time-before,5000,'no minute-long wait for placeholder follow target')
+        eq(gui.phase,'Waiting for zone to settle','zoning startup phase')
+        before=mock.time
+        r:set({},'FollowToonName','NULL')
+        r:call('zoning')
+        eq(mock.time-before,5000,'no wait for NULL follow target')
+        before=mock.time
+        r:set({},'FollowToonName','TestFriend')
+        r:call('zoning')
+        eq(mock.time-before,65000,'preserve wait for real absent follow target')
+        r:set({},'FollowToonName','NULL')
+        mock.values={}
         r:pump()
         eq(gui.ready,true,'ready on runtime pump')
+        eq(gui.phase,'Ready','startup phase complete')
         -- Simulate an actual checkbox click; no game actions occur while drawing.
         r:set({},'UseMelee',1)
         local ended,labels=0,{}

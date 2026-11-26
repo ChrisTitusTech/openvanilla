@@ -37,12 +37,18 @@ local classes = {
 local names = {war='Warrior', brd='Bard', clr='Cleric'}
 
 function G.new(r, class)
-    local self = setmetatable({r=r, class=class, open=true, ready=false,
+    local self = setmetatable({r=r, class=class, open=true, ready=false, loaded=false,
+        phase='Starting AutoLua', started=mq.gettime(),
         fields={}, drafts={}, message='Changes apply to this character only.'}, G)
     for _,group in ipairs({common, assert(classes[class])}) do
         for _,field in ipairs(group) do self.fields[field[1]]=field end
     end
     return self
+end
+
+function G:setPhase(phase)
+    self.phase=phase
+    self.r:log('Startup: '..phase..' ('..math.floor(mq.gettime()-self.started)..' ms)')
 end
 
 function G:queue(key, value)
@@ -178,8 +184,14 @@ function G:draw(imgui)
     if visible then
         imgui.Text(names[self.class]..' | '..self.r.character)
         if not self.ready then
-            imgui.Text('Initializing settings...')
-        else
+            imgui.TextWrapped(self.phase)
+            imgui.Text(string.format('Starting for %.1f seconds', (mq.gettime()-self.started)/1000))
+        end
+        if self.loaded then
+            if not self.ready then
+                imgui.TextWrapped('Settings loaded. Controls will unlock after setup.')
+                imgui.BeginDisabled()
+            end
             imgui.TextWrapped(self.message)
             imgui.Separator()
             imgui.Text('General')
@@ -209,6 +221,7 @@ function G:draw(imgui)
             end
             imgui.Separator()
             if imgui.Button('Stop AutoLua') then self:queue('stop') end
+            if not self.ready then imgui.EndDisabled() end
             imgui.SameLine()
             if imgui.Button('Hide') then self.open=false end
         end
