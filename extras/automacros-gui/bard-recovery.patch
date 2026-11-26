@@ -1,0 +1,97 @@
+--- a/bard.lua
++++ b/bard.lua
+@@ -75,6 +75,23 @@
+     r:log('Song schedule spell='..spell..' reason='..reason..' remaining_ms='..tostring(remaining))
+     r:call('songqueue',spell)
+ end
++-- A non-mana melee class reports 0% mana. Only actual mana pools
++-- qualify, and Crescendo also restores health and endurance.
++local function groupNeedsRecovery(r)
++    local count=math.min(5,num(r,'Group.Members'))
++    if count<=0 then return false end
++    for i=1,count do
++        local e='Group.Member['..i..']'
++        local hp=tonumber(read(r,e..'.PctHPs'))
++        if num(r,e..'.ID')>0 and hp and hp>0 and read(r,e..'.Offline')~='TRUE' and read(r,e..'.OtherZone')~='TRUE' then
++            local mana=tonumber(read(r,e..'.PctMana'))
++            local endu=tonumber(read(r,e..'.PctEndurance'))
++            if hp<85 or (num(r,e..'.MaxMana')>0 and mana and mana<80) or
++               (num(r,e..'.MaxEndurance')>0 and endu and endu<80) then return true end
++        end
++    end
++    return num(r,'Me.PctHPs')<85 or num(r,'Me.PctEndurance')<80
++end
+ -- Essential group buffs get the first available cast before expiry. The
+ -- remaining-time deadline includes the *next* song's cast budget, not only
+ -- the current song, so a later slot cannot hide an earlier deadline.
+@@ -125,7 +142,17 @@
+     if bestCore then queue(r,bestCore.spell,downtime and 'downtime-core' or 'core-expiry',bestCore.remaining);return true end
+     -- Keep essential songs warm while the puller is recovering, without
+     -- touching targets or spending periodic combat-only bursts.
+-    if downtime then return false end
++    if downtime then
++        local regen=r:get({},'regensong')
++        if known(r,regen) and now>=(r.songAttempts[regen] or 0) and num(r,'Me.PctMana')>80 and groupNeedsRecovery(r) then
++            if coreSlack>castTime(r,regen)+750 then
++                queue(r,regen,'downtime-regen',0);return true
++            elseif earliestCore then
++                queue(r,earliestCore.spell,'core-before-regen',earliestCore.remaining);return true
++            end
++        end
++        return false
++    end
+     local burst=r:get({},'bmsong')
+     if known(r,burst) and (r:get({},'bmsongtimer') or 0)==0 and coreSlack>castTime(r,burst)+750 then
+         queue(r,burst,'periodic-group-burst',0)
+--- a/brd.lua
++++ b/brd.lua
+@@ -184,8 +184,6 @@
+     -- Out of Combat
+     if r:condition(s, [=[!${Spell[${Me.Aura[1]}].ID} && !${Me.Moving} && !${Me.Invis} && !${Me.Sitting} && ${Me.State.NotEqual[FEIGN]}&&${castready}==0&&!${Me.Combat}&&${Me.XTarget}==0&&${Me.Gem[${aurasong}]}]=]) then
+         r:invoke(s, [=[songqueue]=], [=["${aurasong}"]=])
+-    elseif r:condition(s, [=[${Me.PctMana}>80&&${Group}&&${Me.GemTimer[${regensong}]}==0&&!${Me.Invis}&& !${Me.Sitting}&&${castready}==0&&!${Me.Combat}&&${Me.XTarget}==0&&(${Spawn[group healer].PctMana}<80||${Spawn[group tank].PctMana}<80)&&${Me.Gem[${regensong}]}]=]) then
+-        r:invoke(s, [=[songqueue]=], [=["${regensong}"]=])
+     elseif r:condition(s, [=[!${Me.Moving}&&!${Me.Invis}&&${Me.Standing}&&${Me.State.NotEqual[FEIGN]}&&${castready}==0&&!${Me.Combat}&&${Me.XTarget}==0]=]) then
+         Bard.scheduleCombat(r,true)
+     end
+--- a/tests/test.lua
++++ b/tests/test.lua
+@@ -899,6 +899,38 @@
+ rotation:set({},'darkswordtimer','15s')
+ print('PASS bard warm core songs, optional-cast slack and actual item cast duration')
+
++-- A warrior with no mana pool is not a recovery deficit; a group member
++-- missing endurance is, provided the core song deadline permits it.
++local originalRecoveryValues=mock.values
++mock.values={}
++for k,v in pairs(originalRecoveryValues) do mock.values[k]=v end
++rotation.songAttempts={}
++rotation:set({},'regensong','Test Crescendo')
++mock.values['Me.Gem[Test Crescendo]']='11'
++mock.values['Me.GemTimer[Test Crescendo].Raw']='0'
++mock.values['Spell[Test Crescendo].MyCastTime.Raw']='3000'
++mock.values['Spell[Test Crescendo].Mana']='0'
++mock.values['Me.PctMana']='100';mock.values['Me.PctEndurance']='100'
++mock.values['Me.PctHPs']='100';mock.values['Group.Members']='2'
++mock.values['Group.Member[1].ID']='101';mock.values['Group.Member[1].PctHPs']='100'
++mock.values['Group.Member[1].MaxMana']='0';mock.values['Group.Member[1].PctMana']='0'
++mock.values['Group.Member[1].MaxEndurance']='100000';mock.values['Group.Member[1].PctEndurance']='100'
++mock.values['Group.Member[2].ID']='102';mock.values['Group.Member[2].PctHPs']='100'
++mock.values['Group.Member[2].MaxMana']='100000';mock.values['Group.Member[2].PctMana']='100'
++mock.values['Group.Member[2].MaxEndurance']='100000';mock.values['Group.Member[2].PctEndurance']='100'
++eq(Bard.scheduleCombat(rotation,true),false,'no needless recovery for zero-mana warrior')
++mock.values['Group.Member[1].PctEndurance']='45'
++eq(Bard.scheduleCombat(rotation,true),true,'actual endurance deficit triggers recovery song')
++eq(selected,'Test Crescendo','use Crescendo for group endurance')
++rotation.songAttempts={}
++mock.values['Me.BuffDuration[Aria].Raw']='5000'
++eq(Bard.scheduleCombat(rotation,true),true,'core deadline outranks recovery')
++eq(selected,'Aria','do not let recovery song expire the core buff')
++rotation.songAttempts={}
++mock.values=originalRecoveryValues
++rotation:set({},'regensong','NULL')
++print('PASS bard actual group resource recovery with core-song priority')
++
+ -- Target slow is not repeated on the same target just because cached
+ -- data has not populated, while a genuinely new target can be slowed.
+ rotation:set({},'UseSlow',1)

@@ -98,12 +98,17 @@ using combat bursts. Secondary songs and clickies must fit within the
 next core song's actual casting deadline. If a secondary would cause a
 core buff to expire, the scheduler refreshes that core song first.
 The clicky check uses its actual cast time plus a safety allowance.
+`bard-recovery.patch` additionally schedules Crescendo only for real
+group health, mana or endurance deficits, after protecting the core
+song deadlines. Non-mana classes do not count as mana deficits.
 
 From the installed `lua/automacros` directory, apply the patch once:
 
 ```bash
 patch --dry-run -p1 < "$overlay/bard-priority.patch"
 patch -p1 < "$overlay/bard-priority.patch"
+patch --dry-run -p1 < "$overlay/bard-recovery.patch"
+patch -p1 < "$overlay/bard-recovery.patch"
 ```
 
 Run the offline tests and restart the bard while the group is idle.
