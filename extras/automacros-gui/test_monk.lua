@@ -288,8 +288,14 @@ return function(setup,mock,eq)
     -- on every subsequent scan.
     mob(110,'a goblin lost in transit',190,200,5,true)
     r.monk.phase='waitingMob';r.monk.waitMobId=110
-    r.monk.waitMobGrace=mock.time+1000;r.monk.waitMobDeadline=mock.time+10000
-    tick(r,1500)
+    r.monk.waitMobGrace=mock.time+25000;r.monk.waitMobDeadline=mock.time+120000
+    r.monk.waitMobDistance=90;r.monk.waitMobProgressAt=mock.time
+    tick(r,20000)
+    eq(r.monk.phase,'waitingMob','do not pull again when a confirmed mob briefly loses hate')
+    mob(110,'a goblin lost in transit',180,200,5,true)
+    tick(r,6000)
+    eq(r.monk.phase,'waitingMob','recent progress extends wait beyond initial grace')
+    tick(r,6000)
     eq(r.monk.phase,'idle','release lost incoming mob')
     assert(r.monk.rejected[110]>mock.time,'temporarily skip lost incoming mob')
 

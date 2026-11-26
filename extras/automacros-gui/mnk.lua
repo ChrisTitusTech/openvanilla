@@ -1066,8 +1066,12 @@ function M.classmainloop(r)
         if campDistance(s)<=math.min(12,cfg(r,'AutoCampRadius')) then
             stopNav(r,s);s.nextPull=t+1500
             local waitId=s.waitMobId
-            if npc(waitId) and distance(position(spawn(waitId)),s.camp)>cfg(r,'AutoCampRadius') then
-                s.phase='waitingMob';s.waitMobDeadline=t+120000;s.waitMobGrace=t+3000
+            if npc(waitId) and (distance(position(spawn(waitId)),s.camp)>cfg(r,'AutoCampRadius') or (not engaged and not assist)) then
+                s.phase='waitingMob';s.waitMobDeadline=t+120000
+                -- Hate may temporarily disappear while an NPC paths around
+                -- geometry. Budget travel time before declaring it lost.
+                s.waitMobGrace=t+clamp(math.ceil((s.pathLength or 0)/15)*1000+8000,25000,45000)
+                s.waitMobDistance=distance(position(spawn(waitId)),s.camp);s.waitMobProgressAt=t
                 status(r,s,'Back at camp; waiting for '..tostring(read(spawn(waitId)..'.CleanName')))
             else
                 s.phase='idle';s.pullId=nil;s.pullName=nil;s.waitMobId=nil
@@ -1086,15 +1090,21 @@ function M.classmainloop(r)
     end
     if s.phase=='waitingMob' then
         local id=s.waitMobId
-        local remote=npc(id) and distance(position(spawn(id)),s.camp)>cfg(r,'AutoCampRadius')
-        local lost=remote and not engaged and not assist and t>=s.waitMobGrace
+        local living=npc(id)
+        local dist=living and distance(position(spawn(id)),s.camp) or math.huge
+        local remote=living and dist>cfg(r,'AutoCampRadius')
+        if living and dist<(s.waitMobDistance or math.huge)-5 then
+            s.waitMobDistance=dist;s.waitMobProgressAt=t
+        end
+        local lost=living and not engaged and not assist and t>=s.waitMobGrace and
+            t-(s.waitMobProgressAt or 0)>=5000
         if lost then
             -- Avoid immediately pulling the same mob over and over when
             -- it loses hate or leashes before reaching camp.
             s.rejected[id]=t+15000
             r:log('Monk incoming mob lost aggro: ID '..id..'; retry after 15 seconds')
         end
-        if engageCombat(r,s,hostile,assist) or not remote or t>=s.waitMobDeadline or lost then
+        if engageCombat(r,s,hostile,assist) or not living or (not remote and (engaged or assist)) or t>=s.waitMobDeadline or lost then
             s.phase='idle';s.pullId=nil;s.pullName=nil;s.waitMobId=nil;s.nextPull=t+1500
             status(r,s,lost and 'Mob lost aggro before arriving; temporarily skipping' or 'Mob arrival wait complete')
         elseif campDistance(s)<=cfg(r,'AutoCampRadius') then
