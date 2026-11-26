@@ -209,15 +209,15 @@ By default each client runs inside its own nested
 [gamescope](https://github.com/ValveSoftware/gamescope) at a fixed
 `GS_RES` (default `1920x1080`). When the window manager resizes or
 unfocuses the window, gamescope scales the output and EverQuest never sees
-a resolution change or focus loss. Pass extra flags with `GS_ARGS` (for
-example `--force-grab-cursor` for mouselook), or set `GAMESCOPE=0` to run
-plain Proton. If gamescope exits at once, check that `gamescope -- glxgears`
+a resolution change or focus loss. `GS_ARGS` defaults to
+`--force-grab-cursor` so mouse input and mouselook stay inside the client;
+set `GS_ARGS=""` to drop it, or `GAMESCOPE=0` to run plain Proton. If gamescope exits at once, check that `gamescope -- glxgears`
 works. On NVIDIA, `vkCreateDevice failed (VkResult: -3)` together with
 `NV_ERR_RESET_REQUIRED` in `journalctl -k` means the GPU faulted and needs
 a reboot.
 
 ```sh
-GS_RES=2560x1440 GS_ARGS="--force-grab-cursor" tools/linux/mq-launch.sh
+GS_RES=2560x1440 tools/linux/mq-launch.sh
 ```
 
 Wine tray icons use the X11 XEmbed protocol. Panels that only host

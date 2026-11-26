@@ -13,7 +13,7 @@
 #   GAMESCOPE       1 = run each client in its own nested gamescope (fixed resolution,
 #                   client always sees itself focused); 0 = plain Proton (default: 1)
 #   GS_RES          gamescope game and window resolution, WxH (default: 1920x1080)
-#   GS_ARGS         extra gamescope arguments, e.g. "--force-grab-cursor"
+#   GS_ARGS         extra gamescope arguments (default: "--force-grab-cursor"; "" = none)
 set -euo pipefail
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -27,7 +27,7 @@ launch_delay="${LAUNCH_DELAY:-2}"
 window_timeout="${WINDOW_TIMEOUT:-180}"
 use_gamescope="${GAMESCOPE:-1}"
 gs_res="${GS_RES:-1920x1080}"
-read -r -a gs_args <<<"${GS_ARGS:-}"
+read -r -a gs_args <<<"${GS_ARGS---force-grab-cursor}"
 
 export STEAM_COMPAT_DATA_PATH="${STEAM_COMPAT_DATA_PATH:-$steam/steamapps/compatdata/205710}"
 export STEAM_COMPAT_CLIENT_INSTALL_PATH="${STEAM_COMPAT_CLIENT_INSTALL_PATH:-$steam}"
