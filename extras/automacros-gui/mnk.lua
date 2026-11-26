@@ -52,7 +52,14 @@ local function followName(r)
     return name
 end
 local function stopNav(r,s)
-    if s.navOwned then command(r,'/nav stop');s.navOwned=false end
+    if s.navOwned then
+        -- A completed path no longer needs stopping. Allow cancellation of
+        -- a just-requested path that has not appeared in Navigation.Active.
+        if yes('Navigation.Active') or now()-(s.navStarted or now())<1000 then
+            command(r,'/nav stop')
+        end
+        s.navOwned=false
+    end
 end
 -- Keep the plugin disabled for the entire monk session. Remember the
 -- original runtime setting once, without changing the plugin's INI.
@@ -84,7 +91,7 @@ end
 local function reset(r,s,message)
     stopNav(r,s);stopCombat(r,s)
     s.phase='idle';s.pullId=nil;s.pullName=nil;s.nextPull=now()+1000
-    s.action=nil;s.engageDeadline=nil;s.approachLimit=nil;s.waitMobId=nil;s.pausedAt=nil
+    s.action=nil;s.engageDeadline=nil;s.approachLimit=nil;s.navApproachRange=nil;s.waitMobId=nil;s.pausedAt=nil
     if message then status(r,s,message) end
 end
 local function invalidateCamp(r,s,message)
@@ -126,7 +133,7 @@ end
 local function returnHome(r,s,reason,waitMobId)
     stopNav(r,s);stopCombat(r,s)
     s.phase='returning';s.nextNav=0;s.waitMobId=waitMobId;s.returnDeadline=now()+120000
-    s.action=nil;s.engageDeadline=nil;s.approachLimit=nil
+    s.action=nil;s.engageDeadline=nil;s.approachLimit=nil;s.navApproachRange=nil
     status(r,s,'Returning to camp: '..reason)
 end
 
@@ -191,7 +198,9 @@ local function pullMethod()
     end
 end
 local function canTag(id,method,limit)
-    return method and npc(id) and num(spawn(id)..'.Distance3D')<=math.min(method.range,limit or method.range)
+    if not method or not npc(id) then return false end
+    local dist=tonumber(read(spawn(id)..'.Distance3D'))
+    return dist and dist>=0 and dist<=math.min(method.range,limit or method.range)
         and yes(spawn(id)..'.LineOfSight')
 end
 local function candidateReason(r,s,id)
@@ -288,7 +297,7 @@ local function reject(r,s,reason)
 end
 local function setPullTarget(r,s,id,path)
     s.pullId=id;s.pullName=tostring(read(spawn(id)..'.CleanName'))
-    s.pathLength=path;s.nextRescan=now()+5000;s.faceId=nil
+    s.pathLength=path;s.nextRescan=now()+5000;s.faceId=nil;s.navApproachRange=nil
     status(r,s,string.format('Pulling %s (ID %d, path %.0f)',s.pullName,id,path or 0))
 end
 local function requestTag(r,s,method,t)
@@ -306,6 +315,7 @@ local function requestTag(r,s,method,t)
     local confirmWindow=math.max(300,3*ping)
     s.engageDeadline=s.engageDeadline or (t+cfg(r,'PullTimeout')*1000)
     command(r,method.command)
+    s.navApproachRange=nil
     s.action={name=method.name,ready=method.ready,requested=t,confirmed=false,
         confirmAt=t+method.castTime+confirmWindow}
     s.nextAction=t+math.max(500,method.castTime+confirmWindow)
@@ -557,8 +567,25 @@ function M.classmainloop(r)
         elseif not s.navOwned or (not yes('Navigation.Active') and t-(s.navStarted or 0)>1000) then
             if not method then status(r,s,'Waiting for pull ability');return end
             if yes('Navigation.Active') and not s.navOwned then status(r,s,'Waiting for navigation to stop');return end
-            stopNav(r,s)
             local range=math.min(method.range,s.approachLimit or method.range)
+            if s.navOwned then
+                -- MQ2Nav can report arrival at a mesh-projected destination
+                -- even though the actual NPC does not satisfy our tag range
+                -- or line-of-sight checks. Don't repeat that same path.
+                s.navOwned=false
+                local previous=s.navApproachRange or range
+                r:log(string.format('Monk pull approach ended before tag: id=%d nav_range=%d distance=%.1f los=%s',
+                    s.pullId,previous,num(spawn(s.pullId)..'.Distance3D'),read(spawn(s.pullId)..'.LineOfSight')))
+                if previous<=10 then
+                    reject(r,s,'Navigation ended without a valid tag position');return
+                end
+                range=math.min(range,math.max(10,math.floor(previous/2)))
+                status(r,s,'Approaching closer after early navigation arrival: '..range..' units')
+            elseif s.navApproachRange then
+                -- Preserve a tighter approach after a manual pause.
+                range=math.min(range,s.navApproachRange)
+            end
+            s.navApproachRange=range
             if not startNav(r,s,'id '..s.pullId,range) then reject(r,s,'No path to pull target') end
         end
         return

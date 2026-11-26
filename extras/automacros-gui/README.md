@@ -111,6 +111,10 @@ are ranked by actual MQ2Nav path length, subject to a maximum path
 distance (default 1000). The GUI and log report candidate counts and
 rejection reasons. While navigating out, the monk rescans every five
 seconds and switches if a materially shorter path becomes available.
+If MQ2Nav reports arrival before the actual NPC is in tag range and line
+of sight, the monk halves the navigation approach range down to 10
+units, rather than repeating an identical path. If that still fails,
+the target is temporarily skipped.
 
 The monk uses **Distant Strike** when ready, falling back to **Throw Stone**.
 It resolves the actual AA ID, confirms its target and ability activation
@@ -156,7 +160,7 @@ For an already-installed GUI/Selo overlay, apply only
 `test_monk.lua` as shown above. No rebuild or relog is required. The
 offline suite exercises the pull cycle, 3D camp coordinates, group
 readiness, native spawn enumeration, path ranking, AA activation and
-retry, rescan, feign pause/resume, plugin suspension/restoration, multi-target
+retry, rescan, early navigation arrival, feign pause/resume, plugin suspension/restoration, multi-target
 camp combat, mob-arrival wait, GUI persistence, timeout, cancellation,
 and zone invalidation. Existing character INI settings are preserved
 when upgrading; the new path limit and timeout are initialized on first

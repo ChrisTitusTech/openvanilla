@@ -149,6 +149,15 @@ return function(setup,mock,eq)
     eq(mock.values['Melee.Enable'],'FALSE','plugin remains off before leaving camp')
     before=#mock.commands;tick(r)
     assert(commandsSince(before,'/nav id 103 distance=292 lineofsight=on'),'navigate to pull target')
+    -- Live regression: Nav says it arrived, but the spawn is still not
+    -- visible. Tighten the approach instead of endlessly repeating it.
+    before=#mock.commands;tick(r,1100)
+    assert(commandsSince(before,'/nav id 103 distance=146 lineofsight=on'),'early arrival reduces navigation radius')
+    assert(not commandsSince(before,'/nav stop'),'do not stop an already completed path')
+    assert(not commandsSince(before,'/nav id 103 distance=292 lineofsight=on'),'never repeat failed approach range')
+    before=#mock.commands;tick(r,1100)
+    assert(commandsSince(before,'/nav id 103 distance=73 lineofsight=on'),'second early arrival reduces radius again')
+
     value('Navigation.Active','TRUE');move(175,200,5)
     mob(103,'a goblin scout',200,200,5,true)
     value('Target.ID',123)
@@ -300,12 +309,25 @@ return function(setup,mock,eq)
     value('Navigation.Active','FALSE')
     before=#mock.commands;tick(r)
     assert(commandsSince(before,'/nav id 104 distance=292 lineofsight=on'),'start new navigation after old stops')
+    -- A disconnected mesh or inaccessible NPC must fail cleanly when
+    -- tightening the approach still cannot reach a valid tag position.
+    for _,range in ipairs({146,73,36,18,10}) do
+        before=#mock.commands;tick(r,1100)
+        assert(commandsSince(before,'/nav id 104 distance='..range..' lineofsight=on'),'bounded closer approach '..range)
+        assert(not commandsSince(before,'/nav stop'),'no inactive nav-stop errors')
+    end
+    before=#mock.commands;tick(r,1100)
+    eq(r.monk.phase,'returning','give up after minimum approach range')
+    assert(r.monk.rejected[104]>mock.time,'temporarily skip inaccessible NPC')
+    assert(not commandsSince(before,'/nav id 104 distance=10 lineofsight=on'),'no repeated minimum-range loop')
+
     r:dispatch('campoff');r:dispatch('pulloff')
     -- Graceful stop restores the original runtime setting.
     r:dispatch('camphere')
     r:dispatch('pullon');tick(r,2000)
     eq(r.monk.phase,'outbound','pull works with plugin disabled')
-    r.monk.navOwned=true
+    tick(r);eq(r.monk.navOwned,true,'approach navigation active before stop')
+    value('Navigation.Active','TRUE')
     before=#mock.commands
     local ok,err=pcall(function() r:dispatch('stop') end)
     assert(not ok and tostring(err):find('Mock exit',1,true),'graceful stop reached mq.exit')
@@ -313,7 +335,7 @@ return function(setup,mock,eq)
     eq(r.running,false,'runtime stopped')
     assert(commandsSince(before,'/melee on'),'stop restores initially enabled plugin')
     eq(mock.values['Melee.Enable'],'TRUE','previous plugin state restored')
-    value('Melee.Enable','FALSE')
+    value('Navigation.Active','FALSE');value('Melee.Enable','FALSE')
     local disabled=setup('mnk')
     eq(disabled.monk.meleeWasEnabled,false,'remember plugin was disabled')
     before=#mock.commands
@@ -322,7 +344,7 @@ return function(setup,mock,eq)
     assert(not commandsSince(before,'/melee on'),'stop never enables initially disabled plugin')
     eq(mock.values['Melee.Enable'],'FALSE','previous disabled state preserved')
 
-    print('PASS monk GUI settings, camp gate, navigation, target eligibility, ranged pull, aggro return, basic combat, session-wide MQ2Melee suspension, fallback, zoning and cancellation')
+    print('PASS monk GUI settings, camp gate, navigation, target eligibility, ranged pull, aggro return, basic combat, session-wide MQ2Melee suspension, fallback, early navigation arrival, zoning and cancellation')
     mock.values={}
     mq.getFilteredSpawns=previousScan;mq.cmd=previousCmd
 end
