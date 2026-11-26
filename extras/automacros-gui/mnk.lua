@@ -207,7 +207,8 @@ local function groupTank()
     for i=1,math.min(5,num('Group.Members')) do
         local e='Group.Member['..i..']'
         local id=num(e..'.ID')
-        if id>0 and id~=me and not yes(e..'.Offline') and not yes(e..'.OtherZone') and num(e..'.PctHPs')>0 then
+        if id>0 and id~=me and not yes(e..'.Offline') and not yes(e..'.OtherZone') and not yes(e..'.Hovering') and
+            read(e..'.Type')~='Corpse' and num(e..'.PctHPs')>0 then
             local class=read(e..'.Class.ShortName')
             local dist=tonumber(read(e..'.Distance')) or distance(position(spawn(id)),position('Me'))
             if dist<=100 and (id==assigned or class=='WAR' or class=='PAL' or class=='SHD') then
@@ -218,6 +219,25 @@ local function groupTank()
         end
     end
     return fallback
+end
+local function hasGroupTank()
+    if num('Group.MainTank.ID')>0 then return true end
+    for i=1,math.min(5,num('Group.Members')) do
+        local class=read('Group.Member['..i..'].Class.ShortName')
+        if class=='WAR' or class=='PAL' or class=='SHD' then return true end
+    end
+    return false
+end
+local function livingGroupTank()
+    local assigned=num('Group.MainTank.ID')
+    for i=1,math.min(5,num('Group.Members')) do
+        local e='Group.Member['..i..']';local class=read(e..'.Class.ShortName')
+        local id=num(e..'.ID')
+        if id>0 and (id==assigned or class=='WAR' or class=='PAL' or class=='SHD') and
+            num(e..'.PctHPs')>0 and not yes(e..'.Hovering') and read(e..'.Type')~='Corpse' and
+            not yes(e..'.Offline') and not yes(e..'.OtherZone') then return true end
+    end
+    return false
 end
 local function combatTargetInCamp(r,s,id)
     local p=position(spawn(id))
@@ -663,8 +683,10 @@ local function handleFeign(r,s,hostile,hate)
         if not feigning() then p.stage='standing';p.nextStand=0
         else
             local hp=num('Me.PctHPs')
-            local healthy=hp>=math.max(60,cfg(r,'MonkEmergencyFDHP')+10) or (p.mode=='camp' and #hostile==0 and hp>0)
-            if t-p.downAt<1000 or hate.top or hate.max>=80 or not healthy then
+            local healthy=hp>=math.max(60,cfg(r,'MonkEmergencyFDHP')+10)
+            local noTank=p.mode=='camp' and hasGroupTank() and not groupTank()
+            if noTank then status(r,s,'Feigning until the group tank is alive and nearby') end
+            if t-p.downAt<1000 or hate.top or hate.max>=80 or not healthy or noTank or (p.mode=='pull' and p.abortAdds and #hostile>0) then
                 r:logAction('monk-fd-wait','Monk FD waiting: hp='..hp..' aggro='..hate.max..' hostile='..#hostile)
                 return true
             end
@@ -709,6 +731,7 @@ local function abilityTick(r,s,mode,hostile)
             end
             if not regenActive and (d('combatRecovery',buff) or d('recovery',buff) or
                aa("Swift Tails' Chant",buff) or d('wind',buff) or (endu<=25 and d('breaths'))) then return true end
+            return false -- sit before spending time on incidental aura refreshes
         end
         if not present(read('Me.Aura[1].Name')) and d('aura') then return true end
         return false
@@ -953,10 +976,6 @@ function M.classmainloop(r)
     end
     maintainCombat(r,s,hostile,assist)
     local engaged=#hostile>0 or read('Me.CombatState')=='COMBAT' or yes('Me.Combat')
-    if not s.camp then
-        status(r,s,'Set camp here first')
-        return
-    end
     -- Stand on incoming aggro before any attempt to fight or feign.
     if (engaged or assist) and s.restOwned and yes('Me.Sitting') then
         if t>=(s.nextRestCommand or 0) then
@@ -965,6 +984,20 @@ function M.classmainloop(r)
         return
     end
     if s.restOwned and not yes('Me.Sitting') and yes('Me.Standing') and t>=(s.nextRestCommand or 0) then s.restOwned=nil end
+    if not s.camp then
+        -- Out-of-combat recovery is useful after a death or before camp is
+        -- established, too. Do not require an active pull or camp to sit.
+        local endu=num('Me.PctEndurance')
+        if not engaged and not assist and endu<cfg(r,'PullMinEndurance') and
+           not yes('Me.Moving') and not yes('Navigation.Active') and not yes('MoveTo.Moving') and
+           not yes('Stick.Active') and num('Me.Casting.ID')==0 and not s.abilityPending then
+            status(r,s,string.format('Recovering endurance (%d%% / %d%%)',endu,cfg(r,'PullMinEndurance')))
+            if read('Me.CombatState')~='DEBUFFED' and yes('Me.Standing') and t>=(s.nextRestCommand or 0) then
+                command(r,'/sit');s.restOwned=true;s.nextRestCommand=t+500
+            end
+        else status(r,s,'Set camp here first') end
+        return
+    end
     local pullPhase=s.phase=='outbound' or s.phase=='awaitAggro' or s.phase=='returning'
     local hp=num('Me.PctHPs')
     local stuckReturn=false
@@ -981,6 +1014,19 @@ function M.classmainloop(r)
     end
     local emergencyHP=cfg(r,'MonkEmergencyFDHP')
     if stuckReturn and engaged then emergencyHP=math.max(emergencyHP,65) end
+    -- Abort a three-plus accidental pull away from camp rather than hand
+    -- the whole pack to a tank expecting a single mob.
+    if pullPhase and #hostile>=3 and campDistance(s)>combatCampRadius(r) then
+        if requestFeign(r,s,'pull','accidental three-plus pull outside camp') then
+            if s.feign then s.feign.abortAdds=true end
+            return
+        end
+    end
+    if not pullPhase and engaged and hasGroupTank() and not livingGroupTank() then
+        stopCombat(r,s)
+        if requestFeign(r,s,'camp','group tank unavailable') then return end
+        selfProtection(r,s,'recovery');status(r,s,'Holding combat: group tank unavailable');return
+    end
     if (engaged or pullPhase) and hp>0 and hp<=emergencyHP and (pullPhase or hate.top or hp<=30) then
         if requestFeign(r,s,pullPhase and 'pull' or 'camp',stuckReturn and 'stalled return under attack' or 'critical health') then return end
     end
@@ -1073,6 +1119,12 @@ function M.classmainloop(r)
             end
         end
         local method=pullMethod()
+        -- A nav route can continue to point-blank range if LOS is blocked.
+        -- Refuse to enter a dense pack to tag a single target.
+        if campDistance(s)>cfg(r,'AutoCampRadius') and num(spawn(s.pullId)..'.Distance3D')<=60 and
+            num('SpawnCount[npc radius 45 zradius 25]')>=3 then
+            reject(r,s,'Unsafe crowded pull approach');return
+        end
         if canTag(s.pullId,method,s.approachLimit) then
             requestTag(r,s,method,t)
         elseif not s.navOwned or (not yes('Navigation.Active') and t-(s.navStarted or 0)>1000) then
@@ -1162,7 +1214,7 @@ function M.classmainloop(r)
     end
     -- Rest only when safely in camp and no cast, movement or encounter
     -- needs attention. Sitting permits fast out-of-combat regeneration.
-    if (cfg(r,'AutoPull')==1 or cfg(r,'UseMelee')==1) and not busyMovement and num('Me.Casting.ID')==0 and not s.abilityPending then
+    if not busyMovement and num('Me.Casting.ID')==0 and not s.abilityPending then
         local endu=num('Me.PctEndurance')
         local health=num('Me.PctHPs')
         local endGoal,hpGoal=cfg(r,'PullMinEndurance'),cfg(r,'PullMinHP')

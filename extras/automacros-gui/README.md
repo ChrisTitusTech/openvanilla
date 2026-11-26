@@ -171,6 +171,24 @@ patch -p1 < "$overlay/group-camp.patch"
 cp "$overlay/camp.lua" camp.lua
 ```
 
+## Hard-encounter survival and recovery
+
+Apply `hard-encounter-recovery.patch` after `group-camp.patch`. The
+warrior starts major mitigation on named or three-plus hostile encounters
+before routine threat actions. Cleric instant heals and safe Divine
+Arbitration are eligible earlier on hard fights, including guarded
+preemption of long casts. Bard crowd control and critical group-support
+AAs receive priority as packs approach camp. The monk rejects crowded
+close-range pull approaches, attempts an emergency feign for three or more
+accidental adds away from camp, and will not resume camp combat while its
+group tank is dead. Endurance recovery sits below the configured threshold
+even when no camp is set, and incidental aura maintenance cannot delay rest.
+
+```bash
+patch --dry-run -p1 < "$overlay/hard-encounter-recovery.patch"
+patch -p1 < "$overlay/hard-encounter-recovery.patch"
+```
+
 ## Monk AutoLua
 
 The new native Lua class module is selected automatically on a monk by

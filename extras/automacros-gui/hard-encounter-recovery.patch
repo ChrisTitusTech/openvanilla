@@ -1,0 +1,252 @@
+--- a/warrior.lua
++++ b/warrior.lua
+@@ -136,9 +136,10 @@
+ end
+ -- Proactive mitigation: the last fight confirmed Pain Doesn't Hurt but
+ -- showed dangerous HP dips before the legacy 30% emergency threshold.
+-function M.mitigate(r)
++function M.mitigate(r,hard)
+     local hp=num(r,'Me.PctHPs')
+-    if hp<=0 or hp>75 then return false end
++    hard=hard or r.warriorHardEncounter
++    if hp<=0 or (not hard and hp>75) then return false end
+     local w=state(r)
+     local active=read(r,'Me.ActiveDisc.Name')
+     local replaceable=active=='NULL' or active=='' or active:find(' Defense',1,true)~=nil
+@@ -162,9 +163,11 @@
+     end
+     -- Known confirmed absorption is first, and emergency avoidance can
+     -- replace only an empty or lower AC-defense slot, not a strong active disc.
+-    if disc('absorball',65,false) then return true end
+-    if aa('Brace for Impact',1686,75) then return true end
+-    if aa("Warlord's Tenacity",300,50) then return true end
++    if hard and disc('meleemit',100,true) then return true end
++    if aa('Brace for Impact',1686,hard and 100 or 75) then return true end
++    if disc('absorball',hard and 85 or 65,false) then return true end
++    if aa("Warlord's Tenacity",300,hard and 75 or 50) then return true end
++    if hard and disc('bmdisc',80,false) then return true end
+     if disc('parryall',50,true) then return true end
+     if disc('meleemit',45,true) then return true end
+     if disc('missall',35,true) then return true end
+@@ -267,12 +270,17 @@
+     else w.assistKey=nil end
+     if #list==0 then
+         if w.firstHostile then r:log('Engagement ended');w.firstHostile=nil;w.confirmed=nil end
+-        r.warriorBadAggro=0
++        r.warriorBadAggro=0;r.warriorHardEncounter=false
+         if not yes(r,'Me.Combat') and num(r,'Me.XTarget[1].ID')==0 then r:call('downtimediscs') end
+         r:call('sitcheck')
+         return
+     end
+     w.firstHostile=w.firstHostile or now
++    local hard=#list>=3
++    for _,mob in ipairs(list) do if mob.named then hard=true;break end end
++    r.warriorHardEncounter=hard
++    -- Start defense before target/attack setup when a pack reaches range.
++    if hard and M.mitigate(r,true) then return end
+     local currentId=num(r,'Target.ID')
+     local current,assist,lowest,bad
+     local badCount=0
+--- a/tank.lua
++++ b/tank.lua
+@@ -98,6 +98,24 @@
+ end
+ -- While MQ2Cast is yielding, sample tank HP and optionally preempt a long
+ -- non-tank cast only if the tank is much worse off and an urgent heal is ready.
++local function hardEncounter(r)
++    return num(r,'Me.XTarget')>=3 or read(r,'Me.XTarget[1].Named')=='TRUE'
++end
++local function arbitrationSafe(r,id,hp)
++    local healthy,critical,seen=0,false,{}
++    local function sample(mid,mhp)
++        if mid~=id and mid>0 and mhp>0 and not seen[mid] then
++            seen[mid]=true
++            if mhp>=hp+25 then healthy=healthy+1 end
++            if mhp<=35 then critical=true end
++        end
++    end
++    sample(num(r,'Me.ID'),num(r,'Me.PctHPs'))
++    for i=1,math.min(5,num(r,'Group.Members')) do
++        local e='Group.Member['..i..']';sample(num(r,e..'.ID'),num(r,e..'.PctHPs'))
++    end
++    return healthy>=2 and not critical
++end
+ function M.monitorWait(r,canPreempt)
+     local now=mq.gettime()
+     if now<(r.tankWaitNext or 0) then return false end
+@@ -114,11 +132,14 @@
+     -- preempts a cast unless the direct heartbeat is especially fresh.
+     if source=='DanNet' and (age or 9999)>1500 and localHp>40 then return false end
+     local cast=r.activeCast
+-    if not canPreempt or not cast or hp>40 or num(r,'Cast.Timing')<=1000 or cast.targetId<=0 then return false end
+-    local emergency=read(r,'Me.AltAbilityReady[Burst of Life]')=='TRUE' and (r:get({},'ClickHealTimer') or 0)==0
++    local hard=hardEncounter(r)
++    if not canPreempt or not cast or hp>(hard and 55 or 40) or num(r,'Cast.Timing')<=1000 or cast.targetId<=0 then return false end
++    local emergency=(r:get({},'ClickHealTimer') or 0)==0 and
++        (read(r,'Me.AltAbilityReady[Burst of Life]')=='TRUE' or
++         (hard and read(r,'Me.AltAbilityReady[Divine Arbitration]')=='TRUE' and arbitrationSafe(r,id,hp)))
+     -- A nearly finished or quick tank heal is never interrupted. Only an
+     -- extended tank cast at near-death HP may give way to a ready instant AA.
+-    if cast.targetId==id and not (hp<=25 and num(r,'Cast.Timing')>1500 and emergency) then return false end
++    if cast.targetId==id and not (hp<=(hard and 45 or 25) and num(r,'Cast.Timing')>1500 and emergency) then return false end
+     -- Group heals can aid the tank; do not interrupt them.
+     if cast.spell==r:get({},'groupheal') or cast.spell==r:get({},'groupfastheal') then return false end
+     local target='Spawn[id '..cast.targetId..']'
+@@ -143,7 +164,7 @@
+     return status~='I' and status~='NULL' and status~='',status
+ end
+ local function priorityAA(r,s,id,name,hp,critical)
+-    local hard=num(r,'Me.XTarget')>=3 or read(r,'Me.XTarget[1].Named')=='TRUE' or
++    local hard=hardEncounter(r) or
+         (r.tankMinimum or 100)<=55
+     local now=mq.gettime()
+     r.tankAANext=r.tankAANext or {}
+@@ -159,7 +180,7 @@
+     end
+     -- On a hard fight, use instant lifesaving AAs while there is still room
+     -- to survive another hit, rather than waiting for near-death health.
+-    if hp<=math.max(hard and 55 or 40,r:get(s,'clickhealpoint') or 35) and
++    if hp<=math.max(hardEncounter(r) and 65 or (hard and 55 or 40),r:get(s,'clickhealpoint') or 35) and
+        (r:get(s,'ClickHealTimer') or 0)==0 and ready('Burst of Life','Burst of Life') then
+         if castBusy(r) then return true end
+         r:set(s,'ClickHealTimer','2s')
+@@ -167,11 +188,10 @@
+     end
+     if hp>75 and not hard then return false end
+     local selfHp=num(r,'Me.PctHPs')
+-    local hurt,healthy,otherCritical=0,0,false
++    local hurt,otherCritical=0,false
+     local function sample(memberId,memberHp)
+         if memberId~=id and memberId>0 and memberHp>0 then
+             if memberHp<=75 then hurt=hurt+1 end
+-            if memberHp>=hp+25 then healthy=healthy+1 end
+             if memberHp<=35 then otherCritical=true end
+         end
+     end
+@@ -180,7 +200,7 @@
+         local m='Group.Member['..i..']'
+         sample(num(r,m..'.ID'),num(r,m..'.PctHPs'))
+     end
+-    if hp<=35 and healthy>=2 and not otherCritical and (r:get(s,'ClickHealTimer') or 0)==0 and
++    if hp<=(hardEncounter(r) and 55 or 35) and arbitrationSafe(r,id,hp) and (r:get(s,'ClickHealTimer') or 0)==0 and
+        ready('Divine Arbitration','Divine Arbitration') then
+         if castBusy(r) then return true end
+         r:set(s,'ClickHealTimer','2s')
+@@ -219,6 +239,7 @@
+     if low then r:log(sample..' new_minimum=true')
+     else r:logAction('tank-sample',sample) end
+     local threshold=r:get(s,'healpoint') or 80
++    if hardEncounter(r) then threshold=math.max(threshold,95) end
+     local critical=math.min(threshold,math.max(70,(r:get(s,'bighealpoint') or 60)+10))
+     if num(r,'Me.Casting.ID')>0 or read(r,base..'.Hovering')=='TRUE' or
+        read(r,base..'.Type')=='Corpse' or num(r,base..'.Distance')>(r:get(s,'healspellrange') or 200) then return false end
+--- a/bard.lua
++++ b/bard.lua
+@@ -92,12 +92,12 @@
+     end
+     return num(r,'Me.PctHPs')<85 or num(r,'Me.PctEndurance')<80
+ end
+-local function encounter(r)
++local function encounter(r,maxRange)
+     local count=num(r,'Me.XTarget')
+     if count<=0 then return 0,false,{} end
+     local slots=math.min(40,math.max(1,count,num(r,'Me.XTargetSlots')))
+     local seen,n,named,occupied={},0,false,0
+-    local radius=(r:get({},'AutoCampRadius') or 60)+20
++    local radius=maxRange or (r:get({},'AutoCampRadius') or 60)+20
+     for i=1,slots do
+         local id=num(r,'Me.XTarget['..i..'].ID')
+         if id>0 then occupied=occupied+1 end
+@@ -137,6 +137,29 @@
+     local hp=num(r,'Me.PctHPs')
+     if num(r,'Me.XTarget[1].ID')>0 and hp>0 and hp<=70 then
+         return aa(r,'Shield of Notes',361,nil,math.huge,'low-health-defense')
++    end
++    return false
++end
++function M.urgent(r)
++    if (r:get({},'castready') or 0)>0 or read(r,'Me.Invis')=='TRUE' or
++        read(r,'Me.Stunned')=='TRUE' or read(r,'Me.State')=='STUN' or read(r,'Me.State')=='FEIGN' then return false end
++    local n,named=encounter(r,200)
++    local nearby=encounter(r,40)
++    local now=mq.gettime()
++    local mez=r:get({},'aoemezsong')
++    -- Control actual adds as soon as they enter song range; don't consume
++    -- an optional song slot first or repeatedly recast on the same pack.
++    if nearby>=2 and r:get({},'UseMez')==1 and known(r,mez) and now>=(r.bardMezNext or 0) then
++        r.bardMezNext=now+9000
++        queue(r,mez,'urgent-crowd-control',0)
++        return true
++    end
++    if n>=3 or named then
++        local reason=named and 'incoming-named' or 'incoming-three-plus'
++        -- Group crit/heal support and haste matter before the pull reaches
++        -- the tank; these two AAs outrank an ordinary song refresh on entry.
++        if aa(r,'Fierce Eye',3506,nil,math.huge,reason) then return true end
++        if aa(r,'Quick Time',3702,nil,math.huge,reason) then return true end
+     end
+     return false
+ end
+--- a/brd.lua
++++ b/brd.lua
+@@ -47,6 +47,7 @@
+ function M.classmainloop(r, ...)
+     local s = r:frame({}, ...)
+     if Bard.defense(r) then return end
++    if Bard.urgent(r) then return end
+     -- Refresh the instant speed AA in both combat and downtime.
+     -- Give it a pulse before scheduling another song.
+     if Bard.selo(r) then return end
+@@ -58,9 +59,6 @@
+     end
+     if r:condition(s, [=[${Me.XTarget[1].ID}&&${Me.Combat}&&${UseMelee}==1]=]) then
+         r:invoke(s, [=[engagetarget]=], [=[]=])
+-    end
+-    if r:condition(s, [=[${Me.XTarget}>1&&${UseMez}==1]=]) then
+-        r:invoke(s, [=[aesongs]=], [=[]=])
+     end
+     if r:condition(s, [=[${Me.XTarget[1].ID} && ${castready}==0]=]) then
+         r:invoke(s, [=[combatsongs]=], [=[]=])
+--- a/tests/test.lua
++++ b/tests/test.lua
+@@ -769,6 +769,14 @@
+ eq(War.mitigate(mit),true,'emergency avoidance when no strong disc')
+ eq(mock.commands[#mock.commands],'/doability "Flash of Anger"','avoidance request')
+ print('PASS earlier confirmed mitigation, cooldown preservation, active-defense protection')
++local hardMit=setup('war')
++hardMit:set({},'meleemit','Last Stand Discipline Rk. II')
++mock.values['Me.PctHPs']='100';mock.values['Me.ActiveDisc.Name']='Stout Defense'
++mock.values['Me.CombatAbilityReady[Last Stand Discipline Rk. II]']='TRUE'
++eq(War.mitigate(hardMit,true),true,'use major defense before damage on hard encounter')
++eq(mock.commands[#mock.commands],'/stopdisc','replace only the lower AC defense early')
++mock.values['Me.CombatAbilityReady[Last Stand Discipline Rk. II]']='FALSE'
++mock.values['Me.ActiveDisc.Name']='NULL'
+
+ -- Defense family can be confirmed by its effect even if the UI label
+ -- and readiness report are unreliable. Record diagnostic equipment data.
+@@ -852,7 +860,7 @@
+ mock.values['Me.AltAbilityReady[Burst of Life]']='FALSE'
+ mock.values['Me.AltAbilityReady[Divine Arbitration]']='TRUE'
+ policy:set({},'ClickHealTimer',0)
+-mock.values['Spawn[id 123].PctHPs']='30'
++mock.values['Spawn[id 123].PctHPs']='52'
+ eq(Tank.priorityHeal(policy,{}),true,'arbitration when healthy allies can support tank')
+ eq(aa[1],'169','Divine Arbitration')
+ mock.values['Me.AltAbilityReady[Divine Arbitration]']='FALSE'
+@@ -1060,6 +1068,16 @@
+ eq(Bard.scheduleCombat(rotation),true,'one AA per safe song slot')
+ eq(bardAA[1],'3702','Quick Time after Fierce Eye')
+ rotation.bardAANext={}
++for _,id in ipairs({2001,2005,2009}) do mock.values['Spawn[id '..id..'].Distance']='150' end
++eq(Bard.urgent(rotation),true,'support AA before incoming pack reaches melee')
++eq(bardAA[1],'3506','early Fierce Eye')
++for _,id in ipairs({2001,2005,2009}) do mock.values['Spawn[id '..id..'].Distance']='25' end
++rotation:set({},'UseMez',1);rotation:set({},'aoemezsong','Test Mez')
++mock.values['Me.Gem[Test Mez]']='7';mock.values['Me.GemTimer[Test Mez].Raw']='0';mock.values['Spell[Test Mez].Mana']='0'
++eq(Bard.urgent(rotation),true,'nearby adds get urgent crowd control')
++eq(selected,'Test Mez','urgent mez before secondary songs')
++rotation:set({},'UseMez',0)
++rotation.bardAANext={}
+ mock.values['Me.XTarget']='1';mock.values['Me.XTarget[5].ID']='0';mock.values['Me.XTarget[9].ID']='0'
+ mock.values['Spawn[id 2001].Named']='TRUE'
+ eq(Bard.scheduleCombat(rotation),true,'single named NPC triggers burn')
