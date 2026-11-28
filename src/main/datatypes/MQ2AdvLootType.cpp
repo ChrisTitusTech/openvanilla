@@ -32,7 +32,9 @@ enum class AdvLootTypeMembers
 	PWantCount,
 	SWantCount,
 	LootInProgress,
-	Filter
+	Filter,
+	PRowCount,
+	SRowCount,
 };
 
 MQ2AdvLootType::MQ2AdvLootType() : MQ2Type("advloot")
@@ -45,6 +47,8 @@ MQ2AdvLootType::MQ2AdvLootType() : MQ2Type("advloot")
 	ScopedTypeMember(AdvLootTypeMembers, SWantCount);
 	ScopedTypeMember(AdvLootTypeMembers, LootInProgress);
 	ScopedTypeMember(AdvLootTypeMembers, Filter);
+	ScopedTypeMember(AdvLootTypeMembers, PRowCount);
+	ScopedTypeMember(AdvLootTypeMembers, SRowCount);
 }
 
 bool MQ2AdvLootType::GetMember(MQVarPtr VarPtr, const char* Member, char* Index, MQTypeVar& Dest)
@@ -60,6 +64,13 @@ bool MQ2AdvLootType::GetMember(MQVarPtr VarPtr, const char* Member, char* Index,
 	{
 	case AdvLootTypeMembers::PCount:
 		Dest.Int = pAdvancedLootWnd->pPLootList->Items.GetSize();
+		Dest.Type = pIntType;
+		return true;
+
+	case AdvLootTypeMembers::PRowCount:
+		Dest.Int = 0;
+		if (CListWnd* list = static_cast<CListWnd*>(pAdvancedLootWnd->GetChildItem("ADLW_PLLList")))
+			Dest.Int = list->ItemsArray.Count;
 		Dest.Type = pIntType;
 		return true;
 
@@ -85,6 +96,13 @@ bool MQ2AdvLootType::GetMember(MQVarPtr VarPtr, const char* Member, char* Index,
 
 	case AdvLootTypeMembers::SCount:
 		Dest.Int = pAdvancedLootWnd->pCLootList->Items.GetSize();
+		Dest.Type = pIntType;
+		return true;
+
+	case AdvLootTypeMembers::SRowCount:
+		Dest.Int = 0;
+		if (CListWnd* list = static_cast<CListWnd*>(pAdvancedLootWnd->GetChildItem("ADLW_CLLList")))
+			Dest.Int = list->ItemsArray.Count;
 		Dest.Type = pIntType;
 		return true;
 
@@ -214,6 +232,13 @@ enum class AdvLootItemMembers
 	NoDrop,
 	FreeGrab,
 	Status,
+	Stackable,
+	MaxStack,
+	LootID,
+	CorpseID,
+	CorpseName,
+	TotalQuantity,
+	ActivelyManaged,
 };
 
 MQ2AdvLootItemType::MQ2AdvLootItemType() : MQ2Type("advlootitem")
@@ -234,6 +259,13 @@ MQ2AdvLootItemType::MQ2AdvLootItemType() : MQ2Type("advlootitem")
 	ScopedTypeMember(AdvLootItemMembers, NoDrop);
 	ScopedTypeMember(AdvLootItemMembers, FreeGrab);
 	ScopedTypeMember(AdvLootItemMembers, Status);
+	ScopedTypeMember(AdvLootItemMembers, Stackable);
+	ScopedTypeMember(AdvLootItemMembers, MaxStack);
+	ScopedTypeMember(AdvLootItemMembers, LootID);
+	ScopedTypeMember(AdvLootItemMembers, CorpseID);
+	ScopedTypeMember(AdvLootItemMembers, CorpseName);
+	ScopedTypeMember(AdvLootItemMembers, TotalQuantity);
+	ScopedTypeMember(AdvLootItemMembers, ActivelyManaged);
 }
 
 bool MQ2AdvLootItemType::GetMember(MQVarPtr VarPtr, const char* Member, char* Index, MQTypeVar& Dest)
@@ -292,6 +324,46 @@ bool MQ2AdvLootItemType::GetMember(MQVarPtr VarPtr, const char* Member, char* In
 		{
 			Dest.DWord = item.LootDetails[0].StackCount;
 		}
+		return true;
+
+	case AdvLootItemMembers::Stackable:
+		Dest.Set(item.bStackable);
+		Dest.Type = pBoolType;
+		return true;
+
+	case AdvLootItemMembers::MaxStack:
+		Dest.Int = item.MaxStack;
+		Dest.Type = pIntType;
+		return true;
+
+	case AdvLootItemMembers::LootID:
+		Dest.DWord = item.LootID;
+		Dest.Type = pIntType;
+		return true;
+
+	case AdvLootItemMembers::CorpseID:
+		Dest.DWord = item.LootDetails.IsEmpty() ? 0 : item.LootDetails[0].CorpseID;
+		Dest.Type = pIntType;
+		return true;
+
+	case AdvLootItemMembers::CorpseName:
+		if (item.LootDetails.IsEmpty())
+			return false;
+		strcpy_s(DataTypeTemp, item.LootDetails[0].Name);
+		Dest.Ptr = DataTypeTemp;
+		Dest.Type = pStringType;
+		return true;
+
+	case AdvLootItemMembers::TotalQuantity:
+		Dest.Int = 0;
+		for (const auto& detail : item.LootDetails)
+			Dest.Int += (std::max)(1, static_cast<int>(detail.StackCount));
+		Dest.Type = pIntType;
+		return true;
+
+	case AdvLootItemMembers::ActivelyManaged:
+		Dest.Set(item.ActivelyManaged);
+		Dest.Type = pBoolType;
 		return true;
 
 	case AdvLootItemMembers::Corpse:
